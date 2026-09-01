@@ -122,10 +122,9 @@ fn read_x11_uri_list() -> Result<String, synchalo_core::AppError> {
             target,
             clipboard.getter.atoms.property,
             Duration::from_secs(2),
-        ) {
-            if let Ok(contents) = String::from_utf8(bytes) {
-                return Ok(contents);
-            }
+        ) && let Ok(contents) = String::from_utf8(bytes)
+        {
+            return Ok(contents);
         }
     }
     Err(synchalo_core::AppError::InvalidInput(

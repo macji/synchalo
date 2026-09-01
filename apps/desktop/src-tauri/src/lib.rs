@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use runtime::AppRuntime;
 use tauri::Manager;
+#[cfg(target_os = "macos")]
 use tauri_plugin_autostart::MacosLauncher;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -19,15 +20,15 @@ pub fn run() {
         .compact()
         .init();
 
+    let autostart = tauri_plugin_autostart::Builder::new();
+    #[cfg(target_os = "macos")]
+    let autostart = autostart.macos_launcher(MacosLauncher::LaunchAgent);
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .macos_launcher(MacosLauncher::LaunchAgent)
-                .build(),
-        )
+        .plugin(autostart.build())
         .setup(|app| {
             let runtime =
                 tauri::async_runtime::block_on(AppRuntime::initialize(app.handle().clone()))?;
