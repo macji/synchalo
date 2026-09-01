@@ -394,7 +394,8 @@ Wayland 对后台读取和控制全局剪贴板有更严格的安全限制，且
 | FR-DIS-003 | 用户可以选择允许参与发现的网络接口。 | P1 |
 | FR-DIS-004 | mDNS 不可用时支持输入 IP 地址和端口连接。 | P0 |
 | FR-DIS-005 | 设备离开、睡眠、切换 IP 后状态能自动更新和重连。 | P0 |
-| FR-DIS-006 | 协议版本不兼容时显示明确提示，不尝试传输内容。 | P0 |
+| FR-DIS-006 | 已在线设备的离线展示延迟 2 秒确认；窗口内恢复连接时保持在线显示，持续离线才更新 UI。 | P0 |
+| FR-DIS-007 | 协议版本不兼容时显示明确提示，不尝试传输内容。 | P0 |
 
 ### 9.2 配对与空间成员
 
@@ -901,6 +902,8 @@ TLS_ESTABLISHED → PAIRING → USER_CONFIRM → ONLINE
 拒绝分支：
 AUTHENTICATING → REVOKED / INCOMPATIBLE / REJECTED
 ```
+
+连接状态机使用实时传输状态；React 展示层仅对 `ONLINE → OFFLINE` 做 2 秒防抖。防抖期间若收到 `ONLINE` 则取消离线展示，Rust 的文件目标解析和发送校验仍以实时传输状态为准。
 
 ## 15. 剪贴板实现
 

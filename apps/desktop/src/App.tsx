@@ -16,6 +16,7 @@ import { ConfirmDialog, type ConfirmState } from "./components/ConfirmDialog";
 import { HaloMark } from "./components/HaloMark";
 import { Sidebar } from "./components/Sidebar";
 import { ToastRegion, type ToastView } from "./components/ToastRegion";
+import { DeviceOfflineDebouncer } from "./lib/devicePresence";
 import { NO_SYNC_DEVICES_MESSAGE } from "./lib/messages";
 import { ClipboardPage } from "./pages/ClipboardPage";
 import { FilesPage } from "./pages/FilesPage";
@@ -23,6 +24,11 @@ import { SettingsPage } from "./pages/SettingsPage";
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
+  const [deviceOfflineDebouncer] = useState(
+    () => new DeviceOfflineDebouncer((devices) => {
+      setSnapshot((current) => current ? withDevices(current, devices) : current);
+    }),
+  );
   const [route, setRoute] = useState<Route>("clipboard");
   const [fatalError, setFatalError] = useState<UserFacingError | null>(null);
   const [toasts, setToasts] = useState<ToastView[]>([]);
@@ -241,6 +247,7 @@ export default function App() {
       .getAppState()
       .then((value) => {
         if (alive) {
+          deviceOfflineDebouncer.initialize(value.devices);
           setSnapshot(value);
           setClipboardView((current) => ({
             ...current,
@@ -264,9 +271,7 @@ export default function App() {
       unlisteners.push(
         await api.onClipboardAdded(() => refreshClipboardRef.current()),
         await api.onClipboardDeleted(() => refreshClipboardRef.current()),
-        await api.onDevicesChanged((devices) => setSnapshot((current) =>
-          current ? withDevices(current, devices) : current,
-        )),
+        await api.onDevicesChanged((devices) => deviceOfflineDebouncer.update(devices)),
         await api.onPairingCodeChanged((pairingCode) => setSnapshot((current) => current && { ...current, pairingCode })),
         await api.onPairingRequested((request) => {
           const platform = request.platform === "macos" ? "macOS" : request.platform === "linux" ? "Ubuntu / Linux" : "未知平台";
@@ -317,8 +322,9 @@ export default function App() {
       alive = false;
       unlisteners.forEach((unlisten) => unlisten());
       timers.forEach((timer) => window.clearTimeout(timer));
+      deviceOfflineDebouncer.dispose();
     };
-  }, [enqueueFilePaths, pushToast, reportError]);
+  }, [deviceOfflineDebouncer, enqueueFilePaths, pushToast, reportError]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
