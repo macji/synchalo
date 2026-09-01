@@ -1,0 +1,13 @@
+/target/
+/node_modules/
+/apps/desktop/node_modules/
+/apps/desktop/dist/
+/apps/desktop/src-tauri/target/
+.DS_Store
+*.log
+*.db
+*.db-shm
+*.db-wal
+.env
+.env.*
+!.env.example

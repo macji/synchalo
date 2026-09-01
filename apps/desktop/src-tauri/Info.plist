@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>SyncHalo 使用局域网发现并连接你明确配对的设备。</string>
+    <key>NSBonjourServices</key>
+    <array>
+      <string>_synchalo._udp</string>
+    </array>
+  </dict>
+</plist>

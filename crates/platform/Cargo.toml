@@ -1,0 +1,23 @@
+[package]
+name = "synchalo-platform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+arboard = { version = "3.6", default-features = false, features = ["wayland-data-control"] }
+chrono.workspace = true
+directories = "6.0"
+hostname = "0.4"
+synchalo-core = { path = "../core" }
+tokio.workspace = true
+tracing.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+clipboard-files = "0.1.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+url = "2.5"
+wl-clipboard-rs = "0.9.3"
+x11-clipboard = "0.9.3"

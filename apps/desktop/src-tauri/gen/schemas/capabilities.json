@@ -1,0 +1,1 @@
+{"main":{"identifier":"main","description":"Minimum permissions for the main SyncHalo window.","local":true,"windows":["main"],"permissions":["core:default"]}}

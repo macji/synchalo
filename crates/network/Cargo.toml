@@ -1,0 +1,33 @@
+[package]
+name = "synchalo-network"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+base64.workspace = true
+blake3.workspace = true
+chrono.workspace = true
+ed25519-dalek = "3.0"
+getrandom.workspace = true
+hmac = "0.12"
+mdns-sd = "0.21"
+parking_lot.workspace = true
+quinn = "0.11.11"
+rcgen = "0.14.10"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+serde.workspace = true
+serde_json.workspace = true
+sha2 = "0.10"
+spake2 = "0.4"
+subtle = "2.6"
+synchalo-core = { path = "../core" }
+synchalo-transfer = { path = "../transfer" }
+tokio.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3.26"
+tokio = { workspace = true, features = ["test-util"] }

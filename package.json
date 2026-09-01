@@ -1,0 +1,21 @@
+{
+  "name": "synchalo-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/desktop"
+  ],
+  "scripts": {
+    "dev": "npm --workspace @synchalo/desktop run dev",
+    "build": "npm --workspace @synchalo/desktop run build",
+    "test": "npm --workspace @synchalo/desktop run test",
+    "lint": "npm --workspace @synchalo/desktop run lint",
+    "tauri": "npm --workspace @synchalo/desktop run tauri --"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "jsdom": "29.1.1"
+  }
+}
