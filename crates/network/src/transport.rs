@@ -10,7 +10,7 @@ use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use hmac::{Hmac, Mac};
 use parking_lot::{Mutex, RwLock};
 use quinn::crypto::rustls::QuicClientConfig;
-use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream};
+use quinn::{ClientConfig, Connection, Endpoint, RecvStream, SendStream, TransportConfig};
 use rcgen::generate_simple_self_signed;
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer, ServerName, UnixTime};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -34,6 +34,8 @@ use crate::{DiscoveredPeer, PairingCodeManager};
 const SERVER_NAME: &str = "synchalo.local";
 const MAX_WIRE_FRAME_BYTES: usize = 2 * 1024 * 1024;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(8);
+const CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(10);
 const AUTH_CLIENT_LABEL: &[u8] = b"synchalo-client-auth-v1";
 const AUTH_SERVER_LABEL: &[u8] = b"synchalo-server-auth-v1";
 
@@ -1154,8 +1156,10 @@ async fn read_frame<T: DeserializeOwned>(recv: &mut RecvStream) -> Result<T, App
 fn server_config(credentials: &TransportCredentials) -> Result<quinn::ServerConfig, AppError> {
     let certificate = CertificateDer::from(credentials.certificate_der.clone());
     let private_key = PrivatePkcs8KeyDer::from(credentials.private_key_der.clone());
-    quinn::ServerConfig::with_single_cert(vec![certificate], private_key.into())
-        .map_err(network_error)
+    let mut config = quinn::ServerConfig::with_single_cert(vec![certificate], private_key.into())
+        .map_err(network_error)?;
+    config.transport_config(connection_transport_config()?);
+    Ok(config)
 }
 
 fn pinned_client_config(certificate_der: &[u8]) -> Result<ClientConfig, AppError> {
@@ -1163,7 +1167,10 @@ fn pinned_client_config(certificate_der: &[u8]) -> Result<ClientConfig, AppError
     roots
         .add(CertificateDer::from(certificate_der.to_vec()))
         .map_err(network_error)?;
-    ClientConfig::with_root_certificates(Arc::new(roots)).map_err(network_error)
+    let mut config =
+        ClientConfig::with_root_certificates(Arc::new(roots)).map_err(network_error)?;
+    config.transport_config(connection_transport_config()?);
+    Ok(config)
 }
 
 fn insecure_client_config() -> Result<ClientConfig, AppError> {
@@ -1172,7 +1179,19 @@ fn insecure_client_config() -> Result<ClientConfig, AppError> {
         .with_custom_certificate_verifier(SkipServerVerification::new())
         .with_no_client_auth();
     let quic = QuicClientConfig::try_from(crypto).map_err(network_error)?;
-    Ok(ClientConfig::new(Arc::new(quic)))
+    let mut config = ClientConfig::new(Arc::new(quic));
+    config.transport_config(connection_transport_config()?);
+    Ok(config)
+}
+
+fn connection_transport_config() -> Result<Arc<TransportConfig>, AppError> {
+    let mut config = TransportConfig::default();
+    config
+        .max_idle_timeout(Some(
+            CONNECTION_IDLE_TIMEOUT.try_into().map_err(network_error)?,
+        ))
+        .keep_alive_interval(Some(KEEP_ALIVE_INTERVAL));
+    Ok(Arc::new(config))
 }
 
 #[derive(Debug)]
