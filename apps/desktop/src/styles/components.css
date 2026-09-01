@@ -493,7 +493,7 @@
   min-height: 82px;
   padding: 14px 4px 13px 12px;
   border-bottom: 1px solid var(--border);
-  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   transition: background-color 120ms ease;
 }
@@ -508,11 +508,8 @@
 }
 
 .favorite-marker {
-  display: grid;
-  width: 16px;
-  height: 20px;
-  align-self: start;
-  place-items: center;
+  display: inline-flex;
+  align-items: center;
   color: var(--warning);
 }
 
@@ -540,7 +537,7 @@
 
 .row-actions {
   display: flex;
-  min-width: 100px;
+  min-width: 134px;
   align-items: flex-start;
   justify-content: flex-end;
   gap: 2px;
@@ -1698,6 +1695,32 @@ button.sync-device-row.is-selected {
   margin-top: 8px;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.clipboard-preview-dialog {
+  width: min(620px, 100%);
+}
+
+.clipboard-preview-text {
+  width: 100%;
+  min-height: 240px;
+  max-height: min(56vh, 520px);
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  outline: none;
+  resize: vertical;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.58;
+  overflow-wrap: anywhere;
+}
+
+.clipboard-preview-text:focus {
+  border-color: var(--focus);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 @media (max-width: 960px) {

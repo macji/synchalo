@@ -84,7 +84,20 @@ describe("SyncHalo shell", () => {
     expect(await screen.findByText("已复制")).toBeInTheDocument();
   });
 
-  it("shows a leading filled star only for favorited history", async () => {
+  it("shows the full clipboard content in a dialog", async () => {
+    render(<App />);
+    const content = await screen.findByText(/会议结论：MVP 首发覆盖/);
+    const row = content.closest("article");
+    expect(row).not.toBeNull();
+
+    fireEvent.click(within(row!).getByRole("button", { name: "查看完整内容" }));
+    const dialog = screen.getByRole("dialog", { name: "完整内容" });
+    expect(within(dialog).getByLabelText("完整剪贴板内容")).toHaveValue(
+      "会议结论：MVP 首发覆盖 macOS 和 Ubuntu ARM64。\n文件流不经过 WebView，历史正文在本地加密。",
+    );
+  });
+
+  it("shows a filled star before the source name only for favorited history", async () => {
     render(<App />);
     const regularRow = (await screen.findByText("cargo test --workspace")).closest("article");
     const favoriteRow = screen.getByText("https://github.com/tauri-apps/tauri").closest("article");
@@ -93,7 +106,24 @@ describe("SyncHalo shell", () => {
     expect(favoriteRow).not.toBeNull();
     expect(within(regularRow!).queryByLabelText("已收藏")).not.toBeInTheDocument();
     expect(within(regularRow!).queryByText("未收藏")).not.toBeInTheDocument();
-    expect(within(favoriteRow!).getByRole("img", { name: "已收藏" })).toBeInTheDocument();
+    const marker = within(favoriteRow!).getByRole("img", { name: "已收藏" });
+    expect(marker).toBeInTheDocument();
+    expect(marker.closest(".row-metadata")).not.toBeNull();
+  });
+
+  it("does not show a completed badge for successful file history", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "粘贴板历史" });
+    fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
+
+    const completedRow = (await screen.findByText("notes.pdf")).closest("article");
+    expect(completedRow).not.toBeNull();
+    expect(within(completedRow!).queryByText("已完成")).not.toBeInTheDocument();
+
+    const activeRow = screen.getByText("SyncHalo-design.zip").closest("article");
+    expect(activeRow).not.toBeNull();
+    fireEvent.click(within(activeRow!).getByRole("button", { name: "SyncHalo-design.zip" }));
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
   });
 
   it("deletes one clipboard row", async () => {

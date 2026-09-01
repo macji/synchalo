@@ -344,13 +344,28 @@ impl AppRuntime {
                 "clipboard text exceeds the 1 MiB limit".to_owned(),
             ));
         }
+        let clipboard_hash = content_hash(content.as_bytes());
+        let latest = self
+            .database
+            .list_clipboard_page(None, false, 1, 1)?
+            .items
+            .into_iter()
+            .next();
+        if is_consecutive_clipboard_duplicate(
+            latest.as_ref().map(|item| item.content_hash.as_str()),
+            &clipboard_hash,
+        ) {
+            return latest.ok_or_else(|| {
+                AppError::Internal("clipboard duplicate lookup returned no item".to_owned())
+            });
+        }
         let identity = self.identity.read().clone();
         let (origin_sequence, hlc) = self
             .database
             .next_event_clock(observed_at.timestamp_millis())?;
         let item = ClipboardItemView {
             id: Uuid::now_v7(),
-            content_hash: content_hash(content.as_bytes()),
+            content_hash: clipboard_hash,
             content,
             source_device_id: identity.device_id,
             source_device_name: identity.display_name,
@@ -1674,6 +1689,13 @@ struct ClipboardOrderKey {
     event_id: Uuid,
 }
 
+fn is_consecutive_clipboard_duplicate(
+    latest_content_hash: Option<&str>,
+    candidate_content_hash: &str,
+) -> bool {
+    latest_content_hash == Some(candidate_content_hash)
+}
+
 impl ClipboardOrderKey {
     fn from_item(item: &ClipboardItemView) -> Self {
         Self {
@@ -1762,6 +1784,13 @@ mod tests {
         assert_eq!(targets.len(), 2);
         assert!(targets.iter().any(|device| device.id == online.id));
         assert!(targets.iter().any(|device| device.id == offline.id));
+    }
+
+    #[test]
+    fn consecutive_clipboard_content_is_deduplicated() {
+        assert!(is_consecutive_clipboard_duplicate(Some("same"), "same"));
+        assert!(!is_consecutive_clipboard_duplicate(Some("older"), "newer"));
+        assert!(!is_consecutive_clipboard_duplicate(None, "first"));
     }
 
     fn test_device(connection_state: DeviceConnectionState, is_current: bool) -> DeviceView {

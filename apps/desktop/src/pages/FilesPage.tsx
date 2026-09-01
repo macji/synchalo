@@ -379,7 +379,7 @@ export function FilesPage({
                                 <div key={target.deviceId}>
                                   <span className={`mini-state mini-state--${target.state}`} />
                                   <strong>{target.deviceName}</strong>
-                                  <span>{transferLabel(target.state)}</span>
+                                  <span>{target.state === "completed" ? null : transferLabel(target.state)}</span>
                                   {target.bytesPerSecond ? <span>{formatBytes(target.bytesPerSecond)}/s</span> : null}
                                 </div>
                               ))}
@@ -548,11 +548,8 @@ export function FilesPage({
 }
 
 function TransferStatus({ state }: { state: TransferState }) {
-  const Icon = state === "completed"
-    ? Check
-    : state === "failed"
-      ? CircleAlert
-      : Send;
+  if (state === "completed") return null;
+  const Icon = state === "failed" ? CircleAlert : Send;
   return (
     <span className={`transfer-status transfer-status--${state}`}>
       <Icon aria-hidden="true" size={14} />

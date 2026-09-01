@@ -3,6 +3,7 @@ import {
   ChevronRight,
   ClipboardCopy,
   Copy,
+  Eye,
   Pause,
   Search,
   Star,
@@ -13,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { ClipboardItemView } from "../api/types";
 import { IconButton } from "../components/IconButton";
+import { ModalDialog } from "../components/ModalDialog";
 import { PageHeader } from "../components/PageHeader";
 import { formatTime, historyGroup } from "../lib/format";
 
@@ -52,6 +54,7 @@ export function ClipboardPage({
   onOpenSettings,
 }: ClipboardPageProps) {
   const [query, setQuery] = useState(initialQuery);
+  const [previewItem, setPreviewItem] = useState<ClipboardItemView | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchReadyRef = useRef(false);
   const requestRef = useRef(onRequestPage);
@@ -151,17 +154,17 @@ export function ClipboardPage({
                     className="clipboard-row"
                     key={item.id}
                   >
-                    <span
-                      aria-hidden={item.pinned ? undefined : true}
-                      aria-label={item.pinned ? "已收藏" : undefined}
-                      className="favorite-marker"
-                      role={item.pinned ? "img" : undefined}
-                    >
-                      {item.pinned ? <Star aria-hidden="true" fill="currentColor" size={14} /> : null}
-                    </span>
                     <div className="clipboard-copy">
                       <p>{item.content}</p>
                       <div className="row-metadata">
+                        {item.pinned ? (
+                          <>
+                            <span aria-label="已收藏" className="favorite-marker" role="img">
+                              <Star aria-hidden="true" fill="currentColor" size={13} />
+                            </span>
+                            <span aria-hidden="true">·</span>
+                          </>
+                        ) : null}
                         <span>{item.sourceDeviceName}</span>
                         <span aria-hidden="true">·</span>
                         <span>{item.direction === "local" ? "本机" : "已接收"}</span>
@@ -170,6 +173,11 @@ export function ClipboardPage({
                       </div>
                     </div>
                     <div aria-label="历史操作" className="row-actions">
+                      <IconButton
+                        icon={<Eye size={16} />}
+                        label="查看完整内容"
+                        onClick={() => setPreviewItem(item)}
+                      />
                       <IconButton
                         icon={<Copy size={16} />}
                         label="复制这条历史"
@@ -245,6 +253,21 @@ export function ClipboardPage({
           <p className="single-page-summary">共 {totalItems} 条</p>
         ) : null}
       </div>
+
+      {previewItem ? (
+        <ModalDialog
+          className="clipboard-preview-dialog"
+          onClose={() => setPreviewItem(null)}
+          title="完整内容"
+        >
+          <textarea
+            aria-label="完整剪贴板内容"
+            className="clipboard-preview-text"
+            readOnly
+            value={previewItem.content}
+          />
+        </ModalDialog>
+      ) : null}
     </section>
   );
 
