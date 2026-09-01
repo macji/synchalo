@@ -7,7 +7,6 @@ export type ClipboardDirection = "local" | "received";
 export type TransferDirection = "sending" | "receiving";
 export type TransferState =
   | "queued"
-  | "waitingForDevice"
   | "transferring"
   | "verifying"
   | "completed"

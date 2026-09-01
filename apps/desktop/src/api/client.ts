@@ -126,7 +126,7 @@ export const api = {
         (filter === "receiving" && transfer.direction === "receiving") ||
         (filter === "failed" && transfer.state === "failed") ||
         (filter === "active" &&
-          ["queued", "waitingForDevice", "transferring", "verifying"].includes(transfer.state));
+          ["queued", "transferring", "verifying"].includes(transfer.state));
       return matchesQuery && matchesFavorite && matchesFilter;
     });
     const pageSize = 100;

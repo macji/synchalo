@@ -817,10 +817,11 @@ impl Database {
             }
             TransferHistoryFilter::Active => conditions.push(
                 "json_extract(state_json, '$.state') IN
-                 ('queued', 'waitingForDevice', 'transferring', 'verifying')",
+                 ('queued', 'transferring', 'verifying')",
             ),
             TransferHistoryFilter::Failed => {
-                conditions.push("json_extract(state_json, '$.state') = 'failed'");
+                conditions
+                    .push("json_extract(state_json, '$.state') IN ('failed', 'waitingForDevice')");
             }
         }
         let where_clause = if conditions.is_empty() {

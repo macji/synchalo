@@ -124,10 +124,10 @@ pub enum TransferDirection {
 #[serde(rename_all = "camelCase")]
 pub enum TransferState {
     Queued,
-    WaitingForDevice,
     Transferring,
     Verifying,
     Completed,
+    #[serde(alias = "waitingForDevice")]
     Failed,
     Cancelled,
 }
@@ -275,4 +275,17 @@ pub struct ClipboardEvent {
     pub hlc: HlcTimestamp,
     pub content: String,
     pub content_hash: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_waiting_transfer_state_is_read_as_failed() {
+        let state: TransferState = serde_json::from_str("\"waitingForDevice\"").unwrap();
+
+        assert_eq!(state, TransferState::Failed);
+        assert_eq!(serde_json::to_string(&state).unwrap(), "\"failed\"");
+    }
 }

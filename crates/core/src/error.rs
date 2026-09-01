@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub const NO_SYNC_DEVICES_MESSAGE: &str = "当前没有可同步的设备，至少需要 2 台设备，才会开启同步";
+pub const NO_SYNC_DEVICES_MESSAGE: &str = "当前没有可同步的在线设备，请至少保持 1 台其他设备在线";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
