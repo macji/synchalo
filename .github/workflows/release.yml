@@ -1,4 +1,4 @@
-name: Publish Desktop Release
+name: Publish Linux and Windows Release
 
 on:
   push:
@@ -114,135 +114,6 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
-
-  build-macos:
-    name: Build macOS ARM64
-    needs: [metadata, verify]
-    runs-on: macos-15
-    env:
-      APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-      APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-      APPLE_ID: ${{ secrets.APPLE_ID }}
-      APPLE_KEYCHAIN_PASSWORD: ${{ secrets.APPLE_KEYCHAIN_PASSWORD }}
-      APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.metadata.outputs.tag }}
-
-      - name: Require Apple signing and notarization secrets
-        shell: bash
-        run: |
-          set -euo pipefail
-          required=(
-            APPLE_CERTIFICATE
-            APPLE_CERTIFICATE_PASSWORD
-            APPLE_ID
-            APPLE_KEYCHAIN_PASSWORD
-            APPLE_PASSWORD
-            APPLE_TEAM_ID
-          )
-          for name in "${required[@]}"; do
-            if [[ -z "${!name:-}" ]]; then
-              echo "Missing required GitHub Actions secret: $name" >&2
-              exit 1
-            fi
-          done
-
-      - name: Import Developer ID certificate
-        shell: bash
-        run: |
-          set -euo pipefail
-          certificate_path="$RUNNER_TEMP/developer-id.p12"
-          intermediate_path="$RUNNER_TEMP/DeveloperIDG2CA.cer"
-          keychain_path="$RUNNER_TEMP/synchalo-build.keychain-db"
-
-          printf '%s' "$APPLE_CERTIFICATE" \
-            | openssl base64 -d -A -out "$certificate_path"
-          curl --fail --location --silent --show-error \
-            https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer \
-            --output "$intermediate_path"
-
-          security create-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$keychain_path"
-          security set-keychain-settings -lut 21600 "$keychain_path"
-          security unlock-keychain -p "$APPLE_KEYCHAIN_PASSWORD" "$keychain_path"
-          security import "$intermediate_path" -k "$keychain_path"
-          security import "$certificate_path" \
-            -k "$keychain_path" \
-            -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -T /usr/bin/codesign \
-            -T /usr/bin/security
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s \
-            -k "$APPLE_KEYCHAIN_PASSWORD" \
-            "$keychain_path"
-          security list-keychains -d user -s "$keychain_path"
-          security default-keychain -d user -s "$keychain_path"
-
-          identity="$(
-            security find-identity -v -p codesigning "$keychain_path" \
-              | sed -n 's/.*"\(Developer ID Application:[^"]*\)".*/\1/p' \
-              | head -n 1
-          )"
-          if [[ -z "$identity" ]]; then
-            echo "No valid Developer ID Application identity was imported" >&2
-            exit 1
-          fi
-          echo "APPLE_SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-darwin
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: . -> target
-          key: release-macos-arm64
-
-      - run: npm ci
-
-      - name: Build, sign, and notarize macOS bundles
-        run: >-
-          npm run tauri -- build
-          --target aarch64-apple-darwin
-          --bundles app,dmg
-
-      - name: Verify and package macOS artifacts
-        shell: bash
-        run: |
-          set -euo pipefail
-          bundle_root="target/aarch64-apple-darwin/release/bundle"
-          app="$bundle_root/macos/SyncHalo.app"
-          dmg="$(find "$bundle_root/dmg" -maxdepth 1 -type f -name '*.dmg' -print -quit)"
-          test -d "$app"
-          test -n "$dmg"
-
-          codesign --verify --deep --strict --verbose=2 "$app"
-          xcrun stapler validate "$app"
-          spctl --assess --type execute -vv "$app"
-          xcrun stapler validate "$dmg"
-
-          mkdir -p release-assets
-          ditto -c -k --sequesterRsrc --keepParent \
-            "$app" \
-            "release-assets/SyncHalo_${RELEASE_VERSION}_macos-arm64.zip"
-          cp "$dmg" "release-assets/SyncHalo_${RELEASE_VERSION}_macos-arm64.dmg"
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: release-macos-arm64
-          path: release-assets/*
-          if-no-files-found: error
-          retention-days: 7
 
   build-linux:
     name: Build Ubuntu ARM64
@@ -449,7 +320,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: [metadata, verify, build-macos, build-linux, build-windows]
+    needs: [metadata, verify, build-linux, build-windows]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -487,7 +358,6 @@ jobs:
 
           Platform packages:
 
-          - macOS ARM64: Developer ID signed and Apple notarized ZIP and DMG
           - Ubuntu Desktop ARM64: DEB and AppImage
           - Windows x64: MSI and NSIS setup executable (${windows_status})
 

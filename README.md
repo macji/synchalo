@@ -127,4 +127,4 @@ macOS 不能直接链接 Ubuntu 的 WebKitGTK、GTK 和 AppIndicator 运行库�
 
 ## 自动发布
 
-版本 Tag 会通过 GitHub Actions 同时构建 macOS ARM64、Ubuntu Desktop ARM64 和 Windows x64，并发布到 GitHub Releases。签名 Secrets、产物列表和发版命令见 [RELEASING.md](RELEASING.md)。
+版本 Tag 会通过 GitHub Actions 构建 Ubuntu Desktop ARM64 和 Windows x64，并发布到 GitHub Releases。macOS 继续在授权 Mac 上进行 Developer ID 签名和 Apple 公证。产物列表、可选 Windows 签名和发版命令见 [RELEASING.md](RELEASING.md)。

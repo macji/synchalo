@@ -1,37 +1,21 @@
 # Desktop Release Deployment
 
-SyncHalo publishes versioned desktop packages through `.github/workflows/release.yml`. A pushed version tag builds every platform from the same commit, verifies the artifacts, generates `SHA256SUMS.txt`, and creates or updates the matching GitHub Release.
+SyncHalo publishes Linux and Windows packages through `.github/workflows/release.yml`. A pushed version tag builds both platforms from the same commit, verifies the artifacts, generates `SHA256SUMS.txt`, and creates or updates the matching GitHub Release. macOS remains a local Developer ID build and notarization workflow.
 
 ## Release Outputs
 
-| Platform             | Runner             | Assets                       |
-| -------------------- | ------------------ | ---------------------------- |
-| macOS ARM64          | `macos-15`         | notarized `.app.zip`, `.dmg` |
-| Ubuntu Desktop ARM64 | `ubuntu-24.04-arm` | `.deb`, `.AppImage`          |
-| Windows x64          | `windows-latest`   | `.msi`, NSIS `-setup.exe`    |
+| Platform             | Runner             | Assets                    |
+| -------------------- | ------------------ | ------------------------- |
+| Ubuntu Desktop ARM64 | `ubuntu-24.04-arm` | `.deb`, `.AppImage`       |
+| Windows x64          | `windows-latest`   | `.msi`, NSIS `-setup.exe` |
 
-macOS publishing fails closed when signing or notarization secrets are missing. Windows signing is optional; without its certificate secrets, the workflow publishes unsigned installers and records that status in the release notes.
+Linux does not require a certificate for these packages. Windows signing is optional; without its certificate secrets, the workflow publishes unsigned installers and records that status in the release notes. Unsigned Windows builds can trigger an “Unknown publisher” or Microsoft Defender SmartScreen warning.
 
 ## Required GitHub Secrets
 
 Open **Settings → Secrets and variables → Actions → New repository secret**.
 
-For macOS, configure all of:
-
-- `APPLE_CERTIFICATE`: base64 of the exported Developer ID Application `.p12`.
-- `APPLE_CERTIFICATE_PASSWORD`: password assigned while exporting the `.p12`.
-- `APPLE_KEYCHAIN_PASSWORD`: a random temporary CI keychain password.
-- `APPLE_ID`: Apple Developer account email.
-- `APPLE_PASSWORD`: Apple app-specific password for notarization.
-- `APPLE_TEAM_ID`: Developer Team ID, currently `39UVPY4WQL`.
-
-Export the `.p12` from Keychain Access under **My Certificates**, then encode it on macOS:
-
-```bash
-openssl base64 -A -in DeveloperID.p12 | pbcopy
-```
-
-For optional Windows Authenticode signing, configure both:
+No Secrets are required to build Linux or unsigned Windows packages. For optional Windows Authenticode signing, configure both:
 
 - `WINDOWS_CERTIFICATE`: base64 of a code-signing `.pfx`.
 - `WINDOWS_CERTIFICATE_PASSWORD`: the `.pfx` export password.
@@ -45,6 +29,10 @@ In PowerShell, encode the certificate with:
 ```
 
 Never commit certificates, private keys, or passwords.
+
+## macOS Local Release
+
+macOS is intentionally excluded from GitHub Actions. Build it on the authorized Mac with the installed `Developer ID Application` identity, submit it through the `SyncHaloNotary` keychain profile, staple the accepted ticket, and replace `release/macos-arm64/` according to `AGENTS.md`. Apple credentials and certificates stay off GitHub.
 
 ## Create a Release
 
