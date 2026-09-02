@@ -45,6 +45,25 @@ describe("SyncHalo shell", () => {
     await waitFor(() => expect(joinDialog).not.toBeInTheDocument());
   });
 
+  it("suppresses the browser context menu", () => {
+    const { unmount } = render(<App />);
+    const contextMenuEvent = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+
+    document.body.dispatchEvent(contextMenuEvent);
+    expect(contextMenuEvent.defaultPrevented).toBe(true);
+
+    unmount();
+    const eventAfterUnmount = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    document.body.dispatchEvent(eventAfterUnmount);
+    expect(eventAfterUnmount.defaultPrevented).toBe(false);
+  });
+
   it("paginates 100 items per page and toggles the favorites filter", async () => {
     const { container } = render(<App />);
     expect(await screen.findByText("第 1 / 3 页 · 共 205 条 · 每页 100 条")).toBeInTheDocument();

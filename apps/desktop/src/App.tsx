@@ -327,6 +327,12 @@ export default function App() {
   }, [deviceOfflineDebouncer, enqueueFilePaths, pushToast, reportError]);
 
   useEffect(() => {
+    const preventContextMenu = (event: MouseEvent) => event.preventDefault();
+    document.addEventListener("contextmenu", preventContextMenu, true);
+    return () => document.removeEventListener("contextmenu", preventContextMenu, true);
+  }, []);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const modifier = event.metaKey || event.ctrlKey;
       if (modifier && event.key === "1") {
