@@ -16,6 +16,10 @@ Keep private keys, database handles, file bytes, and cryptographic operations in
 - `cargo test --workspace`: run Rust tests.
 - `npm run tauri -- build`: create a native host-platform bundle.
 
+## macOS Code-Change Validation
+
+When the current host is macOS, every completed change to executable code or build/runtime configuration must include a native macOS build after the relevant frontend and/or Rust tests pass. Before building, inspect and stop any running SyncHalo process from this repository, then run `npm run tauri -- build`. The task is not complete until the build succeeds and `target/release/bundle/macos/SyncHalo.app` exists so the user can open it for manual verification. Documentation-only changes do not require this build. A routine validation build must not update `release/`; replace, sign, notarize, or publish release artifacts only when the task explicitly includes release work.
+
 ## Release Artifact Policy
 
 Before native builds, inspect and stop any running SyncHalo process from this repository. After a successful build, replace canonical artifacts under `release/<platform>/` and remove stale numbered app copies. For macOS releases, build locally with the `Developer ID Application` identity, submit with the `SyncHaloNotary` keychain profile, staple the accepted ticket, and verify `codesign`, `stapler`, and `spctl`; macOS signing material must never enter GitHub Actions. Stage the fresh bundle, then replace `SyncHalo.app` as a whole; never merge-copy into the existing bundle because that preserves a stale Finder modification date. Rebuild its ZIP, verify archive integrity, then regenerate `SHA256SUMS`. Versioned Linux and Windows GitHub releases must use `.github/workflows/release.yml` and the tag checks documented in `RELEASING.md`; never place signing material in the repository. Unsigned Windows artifacts must be identified in release notes. Never publish failed or unverified output.
