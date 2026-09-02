@@ -878,6 +878,19 @@ impl Database {
             .map_err(storage_error)?;
         Ok(changed > 0)
     }
+
+    pub fn clear_transfer_history(&self) -> Result<usize, AppError> {
+        self.connection
+            .lock()
+            .execute(
+                "DELETE FROM transfers
+                 WHERE COALESCE(json_extract(state_json, '$.pinned'), 0) = 0
+                   AND json_extract(state_json, '$.state') IN
+                       ('completed', 'failed', 'waitingForDevice', 'cancelled')",
+                [],
+            )
+            .map_err(storage_error)
+    }
 }
 
 fn finalize_backup_file(path: &Path) -> Result<(), AppError> {
@@ -1982,5 +1995,26 @@ mod tests {
         assert_eq!(search.total_items, 1);
         assert_eq!(search.items[0].file_name, "history-file-204.zip");
         assert!(database.get_transfer(search.items[0].id).unwrap().is_some());
+    }
+
+    #[test]
+    fn clearing_file_history_preserves_favorites_and_active_transfers() {
+        let database = database();
+        let removable = sample_transfer(1);
+        let mut favorite = sample_transfer(2);
+        favorite.pinned = true;
+        let mut active = sample_transfer(3);
+        active.state = TransferState::Transferring;
+        let favorite_id = favorite.id;
+        let active_id = active.id;
+
+        database.upsert_transfer(&removable).unwrap();
+        database.upsert_transfer(&favorite).unwrap();
+        database.upsert_transfer(&active).unwrap();
+
+        assert_eq!(database.clear_transfer_history().unwrap(), 1);
+        assert!(database.get_transfer(removable.id).unwrap().is_none());
+        assert!(database.get_transfer(favorite_id).unwrap().is_some());
+        assert!(database.get_transfer(active_id).unwrap().is_some());
     }
 }

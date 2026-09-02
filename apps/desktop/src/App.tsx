@@ -73,7 +73,10 @@ export default function App() {
     )
     .map((device) => device.id) ?? [];
   const selectableFileTargetIds = snapshot?.devices
-    .filter((device) => !device.isCurrent && !device.paused)
+    .filter(
+      (device) =>
+        !device.isCurrent && !device.paused && device.connectionState === "online",
+    )
     .map((device) => device.id) ?? [];
   fileTargetIdsRef.current = fileTargetIds?.filter((id) =>
     selectableFileTargetIds.includes(id),
@@ -438,6 +441,18 @@ export default function App() {
           initialQuery={fileView.query}
           onBrowserDrop={api.isTauri ? undefined : enqueueFilePaths}
           onCancel={(id) => void updateTransfer(api.cancelTransfer(id))}
+          onClear={() => setConfirm({
+            title: "清空同步记录？",
+            body: "收藏记录和正在进行的任务会保留，其他本机同步记录将被永久删除。已发送或接收的文件不会被删除。",
+            confirmLabel: "清空记录",
+            danger: true,
+            onConfirm: async () => {
+              const removed = await api.clearFileHistory();
+              const view = fileViewRef.current;
+              await loadFilePage(view.query, view.favoritesOnly, view.filter, 1);
+              pushToast({ message: `已清除 ${removed} 条同步记录`, tone: "success" });
+            },
+          })}
           onDelete={(id) => {
             void api.deleteTransfer(id).then(() => {
               const current = fileViewRef.current;
@@ -663,7 +678,7 @@ function withDevices(snapshot: AppSnapshot, devices: DeviceView[]): AppSnapshot 
     syncStatus: {
       ...snapshot.syncStatus,
       onlineCount: devices.filter(
-        (device) => !device.isCurrent && device.connectionState === "online",
+        (device) => device.connectionState === "online",
       ).length,
       offlineCount: devices.filter(
         (device) => !device.isCurrent && device.connectionState === "offline",

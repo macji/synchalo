@@ -8,7 +8,7 @@ export const mockSnapshot: AppSnapshot = {
   syncStatus: {
     state: "healthy",
     label: "同步正常",
-    onlineCount: 2,
+    onlineCount: 3,
     offlineCount: 1,
     clipboardCapability: "full",
   },

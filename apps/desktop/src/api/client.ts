@@ -297,6 +297,19 @@ export const api = {
     return mock.fileHistory.length !== before;
   },
 
+  async clearFileHistory(): Promise<number> {
+    if (isTauri) return command("clear_file_history");
+    const activeStates = new Set(["queued", "transferring", "verifying"]);
+    const removed = mock.fileHistory.filter(
+      (item) => !item.pinned && !activeStates.has(item.state),
+    ).length;
+    mock.fileHistory = mock.fileHistory.filter(
+      (item) => item.pinned || activeStates.has(item.state),
+    );
+    mock.fileHistoryTotal = mock.fileHistory.length;
+    return removed;
+  },
+
   async openTransfer(id: string): Promise<void> {
     if (isTauri) return command("open_transfer", { id });
   },

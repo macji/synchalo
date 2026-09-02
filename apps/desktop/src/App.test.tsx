@@ -12,6 +12,8 @@ describe("SyncHalo shell", () => {
   it("renders the two-column shell and navigates between the three pages", async () => {
     render(<App />);
     expect(await screen.findByRole("heading", { name: "粘贴板历史" })).toBeInTheDocument();
+    expect(screen.getByText("3 台在线")).toBeInTheDocument();
+    expect(screen.getByText("1 台离线")).toBeInTheDocument();
     const clipboardHeader = document.querySelector<HTMLElement>(".clipboard-page .page-header");
     expect(clipboardHeader).not.toBeNull();
     expect(
@@ -246,25 +248,16 @@ describe("SyncHalo shell", () => {
     expect(screen.queryByText("等待设备上线")).not.toBeInTheDocument();
   });
 
-  it("sends only to selected devices and fails an offline target immediately", async () => {
+  it("does not allow an offline device to be selected", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Office Ubuntu/ }));
+    const offlineDevice = screen.getByRole("button", { name: /Office Ubuntu/ });
 
-    expect(screen.getByText("1 个指定目标")).toBeInTheDocument();
-    const dropZone = screen.getByRole("button", { name: "拖入文件或选择文件" });
-    fireEvent.drop(dropZone, {
-      dataTransfer: { files: [new File(["payload"], "offline-target.pdf")] },
-    });
-
-    const row = (await screen.findByText("offline-target.pdf")).closest("article");
-    expect(row).not.toBeNull();
-    expect(row).toHaveTextContent("发送到 Office Ubuntu");
-    expect(row).toHaveTextContent("失败");
-    expect(row).toHaveTextContent("目标设备当前离线，文件未发送");
-    expect(row).not.toHaveTextContent("等待设备上线");
-    expect(screen.getByText("1 个文件同步失败")).toBeInTheDocument();
+    expect(offlineDevice).toBeDisabled();
+    fireEvent.click(offlineDevice);
+    expect(screen.getByText("全部在线设备")).toBeInTheDocument();
+    expect(screen.getByText("未指定目标，将同步到全部 2 台在线设备")).toBeInTheDocument();
   });
 
   it("filters favorite file history and can resync an earlier file", async () => {
@@ -281,5 +274,22 @@ describe("SyncHalo shell", () => {
     expect(row).not.toBeNull();
     fireEvent.click(within(row!).getByRole("button", { name: "再次同步" }));
     await waitFor(() => expect(screen.getAllByText("SyncHalo-design.zip").length).toBeGreaterThan(1));
+  });
+
+  it("clears finished file history while preserving favorites and active tasks", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "粘贴板历史" });
+    fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
+    expect(await screen.findByText("dataset.tar")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "清空" }));
+    const dialog = screen.getByRole("dialog", { name: "清空同步记录？" });
+    expect(dialog).toHaveTextContent("收藏记录和正在进行的任务会保留");
+    fireEvent.click(within(dialog).getByRole("button", { name: "清空记录" }));
+
+    await waitFor(() => expect(screen.queryByText("dataset.tar")).not.toBeInTheDocument());
+    expect(screen.getByText("notes.pdf")).toBeInTheDocument();
+    expect(screen.getAllByText("SyncHalo-design.zip").length).toBeGreaterThan(0);
+    expect(screen.getByText(/已清除 \d+ 条同步记录/)).toBeInTheDocument();
   });
 });

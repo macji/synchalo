@@ -202,9 +202,7 @@ impl AppRuntime {
         let devices = self.devices()?;
         let online_count = devices
             .iter()
-            .filter(|device| {
-                !device.is_current && device.connection_state == DeviceConnectionState::Online
-            })
+            .filter(|device| device.connection_state == DeviceConnectionState::Online)
             .count();
         let offline_count = devices
             .iter()
@@ -884,6 +882,10 @@ impl AppRuntime {
 
     pub fn delete_transfer(&self, id: Uuid) -> Result<bool, AppError> {
         self.database.delete_transfer(id)
+    }
+
+    pub fn clear_file_history(&self) -> Result<usize, AppError> {
+        self.database.clear_transfer_history()
     }
 
     pub fn transfer(&self, id: Uuid) -> Result<TransferView, AppError> {

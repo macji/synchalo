@@ -90,6 +90,7 @@ pub fn run() {
             commands::retry_transfer,
             commands::cancel_transfer,
             commands::delete_transfer,
+            commands::clear_file_history,
             commands::open_transfer,
             commands::reveal_transfer,
             commands::open_receive_directory,

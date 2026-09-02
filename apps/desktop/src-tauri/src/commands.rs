@@ -281,6 +281,11 @@ pub async fn delete_transfer(state: State<'_, Arc<AppRuntime>>, id: Uuid) -> Com
 }
 
 #[tauri::command]
+pub async fn clear_file_history(state: State<'_, Arc<AppRuntime>>) -> CommandResult<usize> {
+    state.clear_file_history().map_err(Into::into)
+}
+
+#[tauri::command]
 pub async fn open_transfer(state: State<'_, Arc<AppRuntime>>, id: Uuid) -> CommandResult<()> {
     let transfer = state.transfer(id).map_err(UserFacingError::from)?;
     let path = transfer.display_path.ok_or_else(|| {

@@ -51,6 +51,7 @@ interface FilesPageProps {
   targetIds: string[] | null;
   onTargetIdsChange: (ids: string[]) => void;
   onNoTargets: () => void;
+  onClear: () => void;
   onSelectFiles: (targetIds: string[]) => Promise<void>;
   onBrowserDrop?: (names: string[], targetIds: string[]) => void | Promise<void>;
   onShowSyncCode: () => Promise<void>;
@@ -85,6 +86,7 @@ export function FilesPage({
   targetIds,
   onTargetIdsChange,
   onNoTargets,
+  onClear,
   onSelectFiles,
   onBrowserDrop,
   onShowSyncCode,
@@ -132,7 +134,7 @@ export function FilesPage({
   const currentDevice = devices.find((device) => device.isCurrent) ?? null;
   const targetDevices = devices.filter((device) => !device.isCurrent);
   const selectableTargetIds = targetDevices
-    .filter((device) => !device.paused)
+    .filter((device) => !device.paused && device.connectionState === "online")
     .map((device) => device.id);
   const onlineTargetIds = targetDevices
     .filter((device) => !device.paused && device.connectionState === "online")
@@ -203,6 +205,14 @@ export function FilesPage({
               <Star fill={favoritesOnly ? "currentColor" : "none"} size={15} />
               收藏
             </button>
+            <button
+              className="button button--quiet-danger"
+              disabled={totalItems === 0 && !favoritesOnly}
+              onClick={onClear}
+              type="button"
+            >
+              清空
+            </button>
           </>
         }
         eyebrow="RELIABLE TRANSFER"
@@ -244,7 +254,7 @@ export function FilesPage({
                   <button
                     aria-pressed={selected}
                     className={`sync-device-row ${selected ? "is-selected" : ""}`}
-                    disabled={device.paused}
+                    disabled={device.paused || device.connectionState !== "online"}
                     key={device.id}
                     onClick={() => toggleTarget(device.id, selected)}
                     type="button"
