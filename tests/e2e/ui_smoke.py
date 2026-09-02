@@ -43,8 +43,14 @@ def main() -> None:
         page.wait_for_timeout(140)
         assert row_actions.evaluate("element => getComputedStyle(element).opacity") == "1"
         assert first_row.get_by_role("button", name="复制这条历史").is_visible()
+        assert first_row.get_by_role("button", name="查看完整内容").is_visible()
         assert first_row.get_by_role("button", name="收藏").is_visible()
         assert first_row.get_by_role("button", name="删除这条历史").is_visible()
+        first_row.get_by_role("button", name="查看完整内容").click()
+        preview = page.get_by_role("dialog", name="完整内容")
+        assert preview.get_by_label("完整剪贴板内容").input_value() == "cargo test --workspace"
+        page.screenshot(path=ARTIFACTS / "clipboard-preview.png", full_page=True)
+        preview.get_by_role("button", name="关闭完整内容").click()
         page.screenshot(path=ARTIFACTS / "clipboard-hover-actions.png", full_page=True)
 
         pagination = page.get_by_role("navigation", name="粘贴板历史分页")
@@ -72,6 +78,7 @@ def main() -> None:
         assert page.locator(".files-page .page-header").get_by_placeholder("搜索历史").is_visible()
         assert page.locator(".files-page .segmented-control").count() == 0
         assert page.get_by_role("heading", name="我的设备").is_visible()
+        assert page.get_by_text("已完成", exact=True).count() == 0
         first_device = page.locator(".sync-device-row").first
         assert first_device.get_by_text("Jason 的 MacBook Air").is_visible()
         assert first_device.get_by_text("本机", exact=True).is_visible()

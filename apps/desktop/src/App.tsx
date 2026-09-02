@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api/client";
 import type {
   AppSnapshot,
+  DeviceView,
   Route,
   SettingsPatch,
   TransferHistoryFilter,
@@ -15,6 +16,7 @@ import { ConfirmDialog, type ConfirmState } from "./components/ConfirmDialog";
 import { HaloMark } from "./components/HaloMark";
 import { Sidebar } from "./components/Sidebar";
 import { ToastRegion, type ToastView } from "./components/ToastRegion";
+import { DeviceOfflineDebouncer } from "./lib/devicePresence";
 import { NO_SYNC_DEVICES_MESSAGE } from "./lib/messages";
 import { ClipboardPage } from "./pages/ClipboardPage";
 import { FilesPage } from "./pages/FilesPage";
@@ -22,6 +24,11 @@ import { SettingsPage } from "./pages/SettingsPage";
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
+  const [deviceOfflineDebouncer] = useState(
+    () => new DeviceOfflineDebouncer((devices) => {
+      setSnapshot((current) => current ? withDevices(current, devices) : current);
+    }),
+  );
   const [route, setRoute] = useState<Route>("clipboard");
   const [fatalError, setFatalError] = useState<UserFacingError | null>(null);
   const [toasts, setToasts] = useState<ToastView[]>([]);
@@ -60,10 +67,16 @@ export default function App() {
   const fileRequestRef = useRef(0);
   const refreshFileRef = useRef<() => void>(() => undefined);
   availableFileTargetIdsRef.current = snapshot?.devices
+    .filter(
+      (device) =>
+        !device.isCurrent && !device.paused && device.connectionState === "online",
+    )
+    .map((device) => device.id) ?? [];
+  const selectableFileTargetIds = snapshot?.devices
     .filter((device) => !device.isCurrent && !device.paused)
     .map((device) => device.id) ?? [];
   fileTargetIdsRef.current = fileTargetIds?.filter((id) =>
-    availableFileTargetIdsRef.current.includes(id),
+    selectableFileTargetIds.includes(id),
   ) ?? null;
   fileViewRef.current = fileView;
 
@@ -89,6 +102,24 @@ export default function App() {
     (error: unknown) => {
       const normalized = normalizeError(error);
       pushToast({ message: normalized.message, tone: "warning" }, 6_000);
+    },
+    [pushToast],
+  );
+
+  const reportQueuedFiles = useCallback(
+    (transfers: TransferView[], successMessage: string) => {
+      if (!transfers.length) return;
+      if (transfers.every((transfer) => transfer.state === "failed")) {
+        pushToast({ message: `${transfers.length} 个文件同步失败`, tone: "warning" });
+        return;
+      }
+      if (transfers.some((transfer) =>
+        transfer.targets.some((target) => target.state === "failed")
+      )) {
+        pushToast({ message: `${transfers.length} 个文件已开始同步，部分目标失败`, tone: "warning" });
+        return;
+      }
+      pushToast({ message: successMessage, tone: "success" });
     },
     [pushToast],
   );
@@ -136,10 +167,9 @@ export default function App() {
 
   const enqueueFilePaths = useCallback(
     async (paths: string[], requestedTargetIds?: string[]) => {
-      const targetIds = requestedTargetIds
-        ?? fileTargetIdsRef.current
-        ?? availableFileTargetIdsRef.current;
-      if (!targetIds.length) {
+      const selectedTargetIds = requestedTargetIds ?? fileTargetIdsRef.current;
+      const targetIds = selectedTargetIds?.length ? selectedTargetIds : [];
+      if (!targetIds.length && !availableFileTargetIdsRef.current.length) {
         showNoSyncDevices();
         return;
       }
@@ -147,19 +177,17 @@ export default function App() {
         const transfers = await api.enqueueFiles(paths, targetIds);
         const current = fileViewRef.current;
         await loadFilePage(current.query, current.favoritesOnly, current.filter, 1);
-        if (transfers.length) {
-          pushToast({ message: `${transfers.length} 个文件已加入队列`, tone: "success" });
-        }
+        reportQueuedFiles(transfers, `${transfers.length} 个文件已加入队列`);
       } catch (error) {
         reportError(error);
       }
     },
-    [loadFilePage, pushToast, reportError, showNoSyncDevices],
+    [loadFilePage, reportError, reportQueuedFiles, showNoSyncDevices],
   );
 
   const pasteFileClipboard = useCallback(async () => {
-    const targetIds = fileTargetIdsRef.current ?? availableFileTargetIdsRef.current;
-    if (!targetIds.length) {
+    const targetIds = fileTargetIdsRef.current?.length ? fileTargetIdsRef.current : [];
+    if (!targetIds.length && !availableFileTargetIdsRef.current.length) {
       showNoSyncDevices();
       return;
     }
@@ -167,14 +195,15 @@ export default function App() {
       const transfers = await api.pasteFiles(targetIds);
       const current = fileViewRef.current;
       await loadFilePage(current.query, current.favoritesOnly, current.filter, 1);
-      pushToast({
-        message: transfers.length ? `${transfers.length} 个文件已加入队列` : "粘贴板中没有文件",
-        tone: transfers.length ? "success" : "info",
-      });
+      if (transfers.length) {
+        reportQueuedFiles(transfers, `${transfers.length} 个文件已加入队列`);
+      } else {
+        pushToast({ message: "粘贴板中没有文件", tone: "info" });
+      }
     } catch (error) {
       reportError(error);
     }
-  }, [loadFilePage, pushToast, reportError, showNoSyncDevices]);
+  }, [loadFilePage, pushToast, reportError, reportQueuedFiles, showNoSyncDevices]);
 
   const loadClipboardPage = useCallback(
     async (query: string, favoritesOnly: boolean, page: number) => {
@@ -218,6 +247,7 @@ export default function App() {
       .getAppState()
       .then((value) => {
         if (alive) {
+          deviceOfflineDebouncer.initialize(value.devices);
           setSnapshot(value);
           setClipboardView((current) => ({
             ...current,
@@ -241,7 +271,7 @@ export default function App() {
       unlisteners.push(
         await api.onClipboardAdded(() => refreshClipboardRef.current()),
         await api.onClipboardDeleted(() => refreshClipboardRef.current()),
-        await api.onDevicesChanged((devices) => setSnapshot((current) => current && { ...current, devices })),
+        await api.onDevicesChanged((devices) => deviceOfflineDebouncer.update(devices)),
         await api.onPairingCodeChanged((pairingCode) => setSnapshot((current) => current && { ...current, pairingCode })),
         await api.onPairingRequested((request) => {
           const platform = request.platform === "macos" ? "macOS" : request.platform === "linux" ? "Ubuntu / Linux" : "未知平台";
@@ -292,8 +322,9 @@ export default function App() {
       alive = false;
       unlisteners.forEach((unlisten) => unlisten());
       timers.forEach((timer) => window.clearTimeout(timer));
+      deviceOfflineDebouncer.dispose();
     };
-  }, [enqueueFilePaths, pushToast, reportError]);
+  }, [deviceOfflineDebouncer, enqueueFilePaths, pushToast, reportError]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -440,9 +471,7 @@ export default function App() {
               const transfers = await api.resyncTransfer(transfer.id, targetIds);
               const current = fileViewRef.current;
               await loadFilePage(current.query, current.favoritesOnly, current.filter, 1);
-              if (transfers.length) {
-                pushToast({ message: `${transfer.fileName} 已再次加入同步队列`, tone: "success" });
-              }
+              reportQueuedFiles(transfers, `${transfer.fileName} 已再次加入同步队列`);
             } catch (error) {
               reportError(error);
             }
@@ -454,9 +483,7 @@ export default function App() {
               const transfers = await api.selectFiles(targetIds);
               const current = fileViewRef.current;
               await loadFilePage(current.query, current.favoritesOnly, current.filter, 1);
-              if (transfers.length) {
-                pushToast({ message: `${transfers.length} 个文件已加入队列`, tone: "success" });
-              }
+              reportQueuedFiles(transfers, `${transfers.length} 个文件已加入队列`);
             } catch (error) {
               reportError(error);
             }
@@ -493,19 +520,25 @@ export default function App() {
           setSnapshot((current) => current && { ...current, pairingCode });
         }).catch(reportError)}
         onJoin={(code) => void api.joinWithCode(code).then((device) => {
-          setSnapshot((current) => current && {
-            ...current,
-            devices: [...current.devices.filter((entry) => entry.id !== device.id), device],
-          });
+          setSnapshot((current) => current
+            ? withDevices(current, [
+                ...current.devices.filter((entry) => entry.id !== device.id),
+                device,
+              ])
+            : current);
           pushToast({ message: `已连接 ${device.name}`, tone: "success" });
         }).catch(reportError)}
         onOpenDirectory={() => void api.openReceiveDirectory().catch(reportError)}
         onPauseDevice={(device, value) => {
           void api.setDevicePaused(device.id, value).then((updated) => {
-            setSnapshot((current) => current && {
-              ...current,
-              devices: current.devices.map((entry) => entry.id === updated.id ? { ...entry, paused: updated.paused } : entry),
-            });
+            setSnapshot((current) => current
+              ? withDevices(
+                current,
+                current.devices.map((entry) =>
+                  entry.id === updated.id ? { ...entry, paused: updated.paused } : entry,
+                ),
+              )
+              : current);
             pushToast({ message: value ? `已暂停向 ${device.name} 同步` : `已恢复向 ${device.name} 同步`, tone: "info" });
           }).catch(reportError);
         }}
@@ -516,10 +549,12 @@ export default function App() {
           danger: true,
           onConfirm: async () => {
             await api.revokeDevice(device.id);
-            setSnapshot((current) => current && {
-              ...current,
-              devices: current.devices.filter((entry) => entry.id !== device.id),
-            });
+            setSnapshot((current) => current
+              ? withDevices(
+                  current,
+                  current.devices.filter((entry) => entry.id !== device.id),
+                )
+              : current);
           },
         })}
         onSelectDirectory={() => void api.selectReceiveDirectory().then((settings) => {
@@ -569,6 +604,7 @@ export default function App() {
     paused,
     pushToast,
     reportError,
+    reportQueuedFiles,
     route,
     showNoSyncDevices,
     snapshot,
@@ -612,6 +648,22 @@ export default function App() {
       <ConfirmDialog onClose={() => setConfirm(null)} state={confirm} />
     </div>
   );
+}
+
+function withDevices(snapshot: AppSnapshot, devices: DeviceView[]): AppSnapshot {
+  return {
+    ...snapshot,
+    devices,
+    syncStatus: {
+      ...snapshot.syncStatus,
+      onlineCount: devices.filter(
+        (device) => !device.isCurrent && device.connectionState === "online",
+      ).length,
+      offlineCount: devices.filter(
+        (device) => !device.isCurrent && device.connectionState === "offline",
+      ).length,
+    },
+  };
 }
 
 function normalizeError(error: unknown): UserFacingError {

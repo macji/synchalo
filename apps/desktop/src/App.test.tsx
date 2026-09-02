@@ -84,7 +84,20 @@ describe("SyncHalo shell", () => {
     expect(await screen.findByText("已复制")).toBeInTheDocument();
   });
 
-  it("shows a leading filled star only for favorited history", async () => {
+  it("shows the full clipboard content in a dialog", async () => {
+    render(<App />);
+    const content = await screen.findByText(/会议结论：MVP 首发覆盖/);
+    const row = content.closest("article");
+    expect(row).not.toBeNull();
+
+    fireEvent.click(within(row!).getByRole("button", { name: "查看完整内容" }));
+    const dialog = screen.getByRole("dialog", { name: "完整内容" });
+    expect(within(dialog).getByLabelText("完整剪贴板内容")).toHaveValue(
+      "会议结论：MVP 首发覆盖 macOS 和 Ubuntu ARM64。\n文件流不经过 WebView，历史正文在本地加密。",
+    );
+  });
+
+  it("shows a filled star before the source name only for favorited history", async () => {
     render(<App />);
     const regularRow = (await screen.findByText("cargo test --workspace")).closest("article");
     const favoriteRow = screen.getByText("https://github.com/tauri-apps/tauri").closest("article");
@@ -93,7 +106,24 @@ describe("SyncHalo shell", () => {
     expect(favoriteRow).not.toBeNull();
     expect(within(regularRow!).queryByLabelText("已收藏")).not.toBeInTheDocument();
     expect(within(regularRow!).queryByText("未收藏")).not.toBeInTheDocument();
-    expect(within(favoriteRow!).getByRole("img", { name: "已收藏" })).toBeInTheDocument();
+    const marker = within(favoriteRow!).getByRole("img", { name: "已收藏" });
+    expect(marker).toBeInTheDocument();
+    expect(marker.closest(".row-metadata")).not.toBeNull();
+  });
+
+  it("does not show a completed badge for successful file history", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "粘贴板历史" });
+    fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
+
+    const completedRow = (await screen.findByText("notes.pdf")).closest("article");
+    expect(completedRow).not.toBeNull();
+    expect(within(completedRow!).queryByText("已完成")).not.toBeInTheDocument();
+
+    const activeRow = screen.getByText("SyncHalo-design.zip").closest("article");
+    expect(activeRow).not.toBeNull();
+    fireEvent.click(within(activeRow!).getByRole("button", { name: "SyncHalo-design.zip" }));
+    expect(screen.queryByText("已完成")).not.toBeInTheDocument();
   });
 
   it("deletes one clipboard row", async () => {
@@ -137,8 +167,11 @@ describe("SyncHalo shell", () => {
     expect(syncCodeDialog.querySelector(".sync-code-dialog")).toHaveClass("modal-dialog");
     expect(await screen.findByText("482 913")).toBeInTheDocument();
 
+    expect(screen.getByText("全部在线设备")).toBeInTheDocument();
+    expect(screen.getByText("未指定目标，将同步到全部 2 台在线设备")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Studio Ubuntu/ }));
-    expect(screen.getByText("2 个目标")).toBeInTheDocument();
+    expect(screen.getByText("1 个指定目标")).toBeInTheDocument();
+    expect(screen.getByText("将同步到 1 台指定设备")).toBeInTheDocument();
     expect(screen.queryByText(/01 ·|02 ·|03 ·/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /粘贴并同步/ })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "v", metaKey: true });
@@ -175,26 +208,44 @@ describe("SyncHalo shell", () => {
     expect(await screen.findByText("dragged-report.pdf")).toBeInTheDocument();
   });
 
-  it("uses one consistent message when no sync target is selected", async () => {
+  it("sends to every online device when no sync target is selected", async () => {
     render(<App />);
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
 
-    fireEvent.click(screen.getByRole("button", { name: /Studio Ubuntu/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Desk Pi/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Office Ubuntu/ }));
-    expect(screen.getByText("0 个目标")).toBeInTheDocument();
-
-    const message = "当前没有可同步的设备，至少需要 2 台设备，才会开启同步";
+    expect(screen.getByText("全部在线设备")).toBeInTheDocument();
+    expect(screen.getByText("未指定目标，将同步到全部 2 台在线设备")).toBeInTheDocument();
     const dropZone = screen.getByRole("button", { name: "拖入文件或选择文件" });
-    fireEvent.click(dropZone);
-    expect(screen.getAllByText(message).length).toBeGreaterThanOrEqual(2);
-
     fireEvent.drop(dropZone, {
-      dataTransfer: { files: [new File(["payload"], "blocked.pdf")] },
+      dataTransfer: { files: [new File(["payload"], "all-online-default.pdf")] },
     });
-    fireEvent.keyDown(window, { key: "v", metaKey: true });
-    expect(screen.getAllByText(message).length).toBeGreaterThanOrEqual(2);
+
+    const row = (await screen.findByText("all-online-default.pdf")).closest("article");
+    expect(row).not.toBeNull();
+    expect(row).toHaveTextContent("发送到 Studio Ubuntu、Desk Pi");
+    expect(row).not.toHaveTextContent("Office Ubuntu");
+    expect(screen.queryByText("等待设备上线")).not.toBeInTheDocument();
+  });
+
+  it("sends only to selected devices and fails an offline target immediately", async () => {
+    render(<App />);
+    await screen.findByRole("heading", { name: "粘贴板历史" });
+    fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Office Ubuntu/ }));
+
+    expect(screen.getByText("1 个指定目标")).toBeInTheDocument();
+    const dropZone = screen.getByRole("button", { name: "拖入文件或选择文件" });
+    fireEvent.drop(dropZone, {
+      dataTransfer: { files: [new File(["payload"], "offline-target.pdf")] },
+    });
+
+    const row = (await screen.findByText("offline-target.pdf")).closest("article");
+    expect(row).not.toBeNull();
+    expect(row).toHaveTextContent("发送到 Office Ubuntu");
+    expect(row).toHaveTextContent("失败");
+    expect(row).toHaveTextContent("目标设备当前离线，文件未发送");
+    expect(row).not.toHaveTextContent("等待设备上线");
+    expect(screen.getByText("1 个文件同步失败")).toBeInTheDocument();
   });
 
   it("filters favorite file history and can resync an earlier file", async () => {

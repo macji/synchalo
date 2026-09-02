@@ -5,7 +5,6 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  Clock3,
   Copy,
   File,
   FileCheck2,
@@ -35,6 +34,7 @@ import { IconButton } from "../components/IconButton";
 import { ModalDialog } from "../components/ModalDialog";
 import { PageHeader } from "../components/PageHeader";
 import { formatBytes, formatTime, historyGroup, transferLabel } from "../lib/format";
+import { NO_SYNC_DEVICES_MESSAGE } from "../lib/messages";
 
 interface FilesPageProps {
   transfers: TransferView[];
@@ -131,13 +131,17 @@ export function FilesPage({
 
   const currentDevice = devices.find((device) => device.isCurrent) ?? null;
   const targetDevices = devices.filter((device) => !device.isCurrent);
-  const availableTargetIds = targetDevices
+  const selectableTargetIds = targetDevices
     .filter((device) => !device.paused)
     .map((device) => device.id);
-  const selectedTargetIds = (targetIds ?? availableTargetIds).filter((id) =>
-    availableTargetIds.includes(id),
+  const onlineTargetIds = targetDevices
+    .filter((device) => !device.paused && device.connectionState === "online")
+    .map((device) => device.id);
+  const selectedTargetIds = (targetIds ?? []).filter((id) =>
+    selectableTargetIds.includes(id),
   );
-  const sendingDisabled = selectedTargetIds.length === 0;
+  const effectiveTargetIds = selectedTargetIds.length ? selectedTargetIds : onlineTargetIds;
+  const sendingDisabled = effectiveTargetIds.length === 0;
   const isDragging = dragging || browserDragging;
 
   const groups = useMemo(() => {
@@ -268,18 +272,22 @@ export function FilesPage({
               <div>
                 <h2 id="send-files-title">文件同步</h2>
               </div>
-              <small>{selectedTargetIds.length} 个目标</small>
+              <small>
+                {selectedTargetIds.length ? `${selectedTargetIds.length} 个指定目标` : "全部在线设备"}
+              </small>
             </header>
 
             {sendingDisabled ? (
               <div className="no-sync-devices" role="status">
                 <CircleAlert aria-hidden="true" size={15} />
-                <span>当前没有可同步的设备，至少需要 2 台设备，才会开启同步</span>
+                <span>{NO_SYNC_DEVICES_MESSAGE}</span>
               </div>
             ) : (
               <div className="sync-target-summary">
                 <Wifi aria-hidden="true" size={14} />
-                将同步到 {selectedTargetIds.length} 台设备
+                {selectedTargetIds.length
+                  ? `将同步到 ${selectedTargetIds.length} 台指定设备`
+                  : `未指定目标，将同步到全部 ${onlineTargetIds.length} 台在线设备`}
               </div>
             )}
 
@@ -371,7 +379,7 @@ export function FilesPage({
                                 <div key={target.deviceId}>
                                   <span className={`mini-state mini-state--${target.state}`} />
                                   <strong>{target.deviceName}</strong>
-                                  <span>{transferLabel(target.state)}</span>
+                                  <span>{target.state === "completed" ? null : transferLabel(target.state)}</span>
                                   {target.bytesPerSecond ? <span>{formatBytes(target.bytesPerSecond)}/s</span> : null}
                                 </div>
                               ))}
@@ -540,13 +548,8 @@ export function FilesPage({
 }
 
 function TransferStatus({ state }: { state: TransferState }) {
-  const Icon = state === "completed"
-    ? Check
-    : state === "failed"
-      ? CircleAlert
-      : state === "waitingForDevice"
-        ? Clock3
-        : Send;
+  if (state === "completed") return null;
+  const Icon = state === "failed" ? CircleAlert : Send;
   return (
     <span className={`transfer-status transfer-status--${state}`}>
       <Icon aria-hidden="true" size={14} />
@@ -563,11 +566,11 @@ function directionSummary(transfer: TransferView): string {
 
 function deviceLabel(device: DeviceView): string {
   if (device.paused) return "已暂停";
-  return device.connectionState === "online" ? "在线" : "离线 · 上线后发送";
+  return device.connectionState === "online" ? "在线" : "离线";
 }
 
 function isActive(state: TransferState): boolean {
-  return ["queued", "waitingForDevice", "transferring", "verifying"].includes(state);
+  return ["queued", "transferring", "verifying"].includes(state);
 }
 
 function scrollElementToStart(element: HTMLDivElement | null) {

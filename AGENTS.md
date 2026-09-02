@@ -18,7 +18,7 @@ Keep private keys, database handles, file bytes, and cryptographic operations in
 
 ## Release Artifact Policy
 
-Before native builds, inspect and stop any running SyncHalo process from this repository. After a successful build, replace canonical artifacts under `release/<platform>/` and remove stale numbered app copies. For macOS, stage and sign a fresh bundle, then replace `SyncHalo.app` as a whole; never merge-copy into the existing bundle because that preserves a stale Finder modification date. Rebuild its ZIP, verify `codesign` and archive integrity, then regenerate `SHA256SUMS`. Never publish failed or unverified output.
+Before native builds, inspect and stop any running SyncHalo process from this repository. After a successful build, replace canonical artifacts under `release/<platform>/` and remove stale numbered app copies. For macOS releases, build with the `Developer ID Application` identity, submit with the `SyncHaloNotary` keychain profile, staple the accepted ticket, and verify `codesign`, `stapler`, and `spctl`; never replace a Developer ID signature with an ad-hoc signature. Stage the fresh bundle, then replace `SyncHalo.app` as a whole; never merge-copy into the existing bundle because that preserves a stale Finder modification date. Rebuild its ZIP, verify archive integrity, then regenerate `SHA256SUMS`. Ad-hoc CI bundles are test artifacts only. Never publish failed or unverified output.
 
 ## Coding Style & Naming Conventions
 

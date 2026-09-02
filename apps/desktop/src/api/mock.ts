@@ -164,7 +164,7 @@ export const mockSnapshot: AppSnapshot = {
       fileName: "dataset.tar",
       fileSize: 12_800_000_000,
       direction: "sending",
-      state: "waitingForDevice",
+      state: "failed",
       progress: 0,
       createdAt: new Date(now - 8_000_000).toISOString(),
       sourceDeviceName: "Jason 的 MacBook Air",
@@ -172,16 +172,16 @@ export const mockSnapshot: AppSnapshot = {
         {
           deviceId: id("4"),
           deviceName: "Office Ubuntu",
-          state: "waitingForDevice",
+          state: "failed",
           progress: 0,
           bytesPerSecond: null,
-          error: null,
+          error: "目标设备离线，文件未发送",
         },
       ],
       bytesPerSecond: null,
       etaSeconds: null,
       displayPath: "/Users/jason/Downloads/dataset.tar",
-      error: null,
+      error: "目标设备离线，文件未发送",
       contentHash: "c".repeat(64),
       sourceModifiedUnixMs: now - 8_000_000,
       pinned: false,
@@ -214,21 +214,27 @@ export function cloneMockSnapshot(): AppSnapshot {
 export function makeMockTransfer(fileName: string, targetIds?: string[]): TransferView {
   const targets = mockSnapshot.devices
     .filter((device) => !device.isCurrent && !device.paused)
-    .filter((device) => !targetIds || targetIds.includes(device.id))
+    .filter((device) =>
+      targetIds?.length
+        ? targetIds.includes(device.id)
+        : device.connectionState === "online",
+    )
     .map((device) => ({
       deviceId: device.id,
       deviceName: device.name,
-      state: device.connectionState === "online" ? "queued" as const : "waitingForDevice" as const,
+      state: device.connectionState === "online" ? "queued" as const : "failed" as const,
       progress: 0,
       bytesPerSecond: null,
-      error: null,
+      error: device.connectionState === "online" ? null : "目标设备当前离线，文件未发送",
     }));
+  const hasOnlineTarget = targets.some((target) => target.state === "queued");
+  const hasOfflineTarget = targets.some((target) => target.state === "failed");
   return {
     id: globalThis.crypto?.randomUUID?.() ?? id(String(Date.now()).slice(-12)),
     fileName,
     fileSize: 12_400_000,
     direction: "sending",
-    state: targets.some((target) => target.state === "queued") ? "queued" : "waitingForDevice",
+    state: hasOnlineTarget ? "queued" : "failed",
     progress: 0,
     createdAt: new Date().toISOString(),
     sourceDeviceName: mockSnapshot.settings.deviceName,
@@ -236,7 +242,13 @@ export function makeMockTransfer(fileName: string, targetIds?: string[]): Transf
     bytesPerSecond: null,
     etaSeconds: null,
     displayPath: fileName,
-    error: null,
+    error: hasOfflineTarget
+      ? hasOnlineTarget
+        ? "部分目标设备当前离线，文件未发送"
+        : "目标设备当前离线，文件未发送"
+      : targets.length
+        ? null
+        : "没有可同步的在线设备",
     contentHash: "d".repeat(64),
     sourceModifiedUnixMs: Date.now(),
     pinned: false,

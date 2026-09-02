@@ -63,7 +63,6 @@ export function formatRelative(value: string | null): string {
 export function transferLabel(state: TransferState): string {
   return {
     queued: "已排队",
-    waitingForDevice: "等待设备上线",
     transferring: "传输中",
     verifying: "校验中",
     completed: "已完成",

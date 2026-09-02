@@ -344,13 +344,28 @@ impl AppRuntime {
                 "clipboard text exceeds the 1 MiB limit".to_owned(),
             ));
         }
+        let clipboard_hash = content_hash(content.as_bytes());
+        let latest = self
+            .database
+            .list_clipboard_page(None, false, 1, 1)?
+            .items
+            .into_iter()
+            .next();
+        if is_consecutive_clipboard_duplicate(
+            latest.as_ref().map(|item| item.content_hash.as_str()),
+            &clipboard_hash,
+        ) {
+            return latest.ok_or_else(|| {
+                AppError::Internal("clipboard duplicate lookup returned no item".to_owned())
+            });
+        }
         let identity = self.identity.read().clone();
         let (origin_sequence, hlc) = self
             .database
             .next_event_clock(observed_at.timestamp_millis())?;
         let item = ClipboardItemView {
             id: Uuid::now_v7(),
-            content_hash: content_hash(content.as_bytes()),
+            content_hash: clipboard_hash,
             content,
             source_device_id: identity.device_id,
             source_device_name: identity.display_name,
@@ -608,42 +623,28 @@ impl AppRuntime {
             ));
         }
         let requested: Option<HashSet<_>> = target_ids.map(|ids| ids.into_iter().collect());
-        if requested.as_ref().is_some_and(HashSet::is_empty) {
-            return Err(AppError::NoSyncDevices);
-        }
-        let available_targets: Vec<DeviceView> = self
-            .devices()?
-            .into_iter()
-            .filter(|device| !device.is_current && !device.paused)
-            .collect();
-        if available_targets.is_empty() {
-            return Err(AppError::NoSyncDevices);
-        }
-        let targets: Vec<DeviceView> = available_targets
-            .iter()
-            .filter(|device| {
-                requested
-                    .as_ref()
-                    .is_none_or(|ids| ids.contains(&device.id))
-            })
-            .cloned()
-            .collect();
-        if let Some(requested) = &requested
+        let targets = select_transfer_targets(self.devices()?, requested.as_ref());
+        if let Some(requested) = requested.as_ref().filter(|ids| !ids.is_empty())
             && targets.len() != requested.len()
         {
             return Err(AppError::NoSyncDevices);
         }
+        if targets.is_empty() {
+            return Err(AppError::NoSyncDevices);
+        }
         let online_ids = self.transport.online_peer_ids();
+        let has_online_target = targets.iter().any(|device| online_ids.contains(&device.id));
+        let has_offline_target = targets
+            .iter()
+            .any(|device| !online_ids.contains(&device.id));
         let mut transfers = Vec::with_capacity(paths.len());
         for path in paths {
             let canonical = path.canonicalize().map_err(file_error)?;
             let (manifest, _) = inspect_file(&canonical).await?;
-            let state = if !targets.is_empty()
-                && targets.iter().any(|device| online_ids.contains(&device.id))
-            {
+            let state = if has_online_target {
                 TransferState::Queued
             } else {
-                TransferState::WaitingForDevice
+                TransferState::Failed
             };
             let transfer = TransferView {
                 id: manifest.id,
@@ -662,17 +663,24 @@ impl AppRuntime {
                         state: if online_ids.contains(&device.id) {
                             TransferState::Queued
                         } else {
-                            TransferState::WaitingForDevice
+                            TransferState::Failed
                         },
                         progress: 0.0,
                         bytes_per_second: None,
-                        error: None,
+                        error: (!online_ids.contains(&device.id))
+                            .then(|| "目标设备当前离线，文件未发送".to_owned()),
                     })
                     .collect(),
                 bytes_per_second: None,
                 eta_seconds: None,
                 display_path: Some(canonical.to_string_lossy().into_owned()),
-                error: None,
+                error: has_offline_target.then(|| {
+                    if has_online_target {
+                        "部分目标设备当前离线，文件未发送".to_owned()
+                    } else {
+                        "目标设备当前离线，文件未发送".to_owned()
+                    }
+                }),
                 content_hash: Some(manifest.blake3.clone()),
                 source_modified_unix_ms: manifest.modified_unix_ms,
                 pinned: false,
@@ -707,29 +715,47 @@ impl AppRuntime {
         let mut transfer = self.transfer(id)?;
         transfer.state = state;
         transfer.error = None;
-        if state == TransferState::Queued && transfer.targets.is_empty() {
-            transfer.state = TransferState::WaitingForDevice;
-        }
         self.database.upsert_transfer(&transfer)?;
         let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
         Ok(transfer)
     }
 
     pub async fn retry_transfer(self: &Arc<Self>, id: Uuid) -> Result<TransferView, AppError> {
-        let mut transfer = self.update_transfer_state(id, TransferState::Queued)?;
+        let mut transfer = self.transfer(id)?;
+        if transfer.targets.is_empty() {
+            return Err(AppError::NoSyncDevices);
+        }
         let online = self.transport.online_peer_ids();
         let target_ids: Vec<_> = transfer
             .targets
             .iter_mut()
-            .filter(|target| online.contains(&target.device_id))
-            .map(|target| {
-                target.state = TransferState::Queued;
-                target.error = None;
-                target.device_id
+            .filter_map(|target| {
+                target.progress = 0.0;
+                target.bytes_per_second = None;
+                if online.contains(&target.device_id) {
+                    target.state = TransferState::Queued;
+                    target.error = None;
+                    Some(target.device_id)
+                } else {
+                    target.state = TransferState::Failed;
+                    target.error = Some("目标设备当前离线，文件未发送".to_owned());
+                    None
+                }
             })
             .collect();
+        transfer.progress = 0.0;
+        transfer.bytes_per_second = None;
+        transfer.eta_seconds = None;
         if target_ids.is_empty() {
-            transfer.state = TransferState::WaitingForDevice;
+            transfer.state = TransferState::Failed;
+            transfer.error = Some("目标设备当前离线，文件未发送".to_owned());
+        } else {
+            transfer.state = TransferState::Queued;
+            transfer.error = transfer
+                .targets
+                .iter()
+                .any(|target| target.state == TransferState::Failed)
+                .then(|| "部分目标设备当前离线，文件未发送".to_owned());
         }
         self.database.upsert_transfer(&transfer)?;
         let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
@@ -843,12 +869,7 @@ impl AppRuntime {
                     .transfer(transfer_id)
                     .is_ok_and(|transfer| transfer.state != TransferState::Cancelled)
             {
-                if matches!(&error, AppError::Network(_)) {
-                    let _ = runtime.wait_file_transfer(transfer_id, peer_id, error.to_string());
-                } else {
-                    let _ =
-                        runtime.fail_file_transfer(transfer_id, peer_id, error.to_string(), false);
-                }
+                let _ = runtime.fail_file_transfer(transfer_id, peer_id, error.to_string(), false);
             }
         });
         self.transfer_tasks
@@ -925,8 +946,7 @@ impl AppRuntime {
                         Ok(())
                     }
                     TransportEvent::PeerOnline { device_id, address } => {
-                        runtime.update_peer_connection(device_id, true, Some(address))?;
-                        runtime.resume_waiting_for_peer(device_id)
+                        runtime.update_peer_connection(device_id, true, Some(address))
                     }
                     TransportEvent::PeerOffline { device_id } => {
                         runtime.update_peer_connection(device_id, false, None)?;
@@ -1035,29 +1055,6 @@ impl AppRuntime {
         }
         self.database.upsert_device(&device)?;
         self.emit_devices();
-        Ok(())
-    }
-
-    fn resume_waiting_for_peer(self: &Arc<Self>, peer_id: Uuid) -> Result<(), AppError> {
-        let transfer_ids: Vec<_> = self
-            .database
-            .list_transfers(2_000)?
-            .into_iter()
-            .filter(|transfer| {
-                transfer.direction == TransferDirection::Sending
-                    && transfer.state != TransferState::Cancelled
-                    && transfer.state != TransferState::Completed
-                    && transfer.targets.iter().any(|target| {
-                        target.device_id == peer_id
-                            && target.state != TransferState::Completed
-                            && target.state != TransferState::Cancelled
-                    })
-            })
-            .map(|transfer| transfer.id)
-            .collect();
-        for transfer_id in transfer_ids {
-            self.launch_file_transfer(transfer_id, peer_id)?;
-        }
         Ok(())
     }
 
@@ -1278,14 +1275,16 @@ impl AppRuntime {
                 .any(|target| target.state == TransferState::Failed)
             {
                 TransferState::Failed
-            } else if transfer
-                .targets
-                .iter()
-                .any(|target| target.state == TransferState::WaitingForDevice)
-            {
-                TransferState::WaitingForDevice
             } else {
                 TransferState::Transferring
+            };
+            transfer.error = if transfer.state == TransferState::Failed {
+                transfer
+                    .targets
+                    .iter()
+                    .find_map(|target| target.error.clone())
+            } else {
+                None
             };
         }
         self.database.upsert_transfer(&transfer)?;
@@ -1332,30 +1331,6 @@ impl AppRuntime {
             target.bytes_per_second = None;
             transfer.state = TransferState::Failed;
         }
-        self.database.upsert_transfer(&transfer)?;
-        let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
-        Ok(())
-    }
-
-    fn wait_file_transfer(
-        &self,
-        transfer_id: Uuid,
-        peer_device_id: Uuid,
-        reason: String,
-    ) -> Result<(), AppError> {
-        let mut transfer = self.transfer(transfer_id)?;
-        if let Some(target) = transfer
-            .targets
-            .iter_mut()
-            .find(|target| target.device_id == peer_device_id)
-        {
-            target.state = TransferState::WaitingForDevice;
-            target.error = Some(reason);
-            target.bytes_per_second = None;
-        }
-        transfer.state = TransferState::WaitingForDevice;
-        transfer.bytes_per_second = None;
-        transfer.eta_seconds = None;
         self.database.upsert_transfer(&transfer)?;
         let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
         Ok(())
@@ -1649,6 +1624,23 @@ fn file_error(error: impl std::fmt::Display) -> AppError {
     AppError::File(error.to_string())
 }
 
+fn select_transfer_targets(
+    devices: Vec<DeviceView>,
+    requested: Option<&HashSet<Uuid>>,
+) -> Vec<DeviceView> {
+    let requested = requested.filter(|ids| !ids.is_empty());
+    devices
+        .into_iter()
+        .filter(|device| !device.is_current && !device.paused)
+        .filter(|device| {
+            requested.map_or(
+                device.connection_state == DeviceConnectionState::Online,
+                |ids| ids.contains(&device.id),
+            )
+        })
+        .collect()
+}
+
 fn aggregate_progress(targets: &[TransferTargetView]) -> f32 {
     if targets.is_empty() {
         return 0.0;
@@ -1695,6 +1687,13 @@ struct ClipboardOrderKey {
     hlc: HlcTimestamp,
     origin_device_id: Uuid,
     event_id: Uuid,
+}
+
+fn is_consecutive_clipboard_duplicate(
+    latest_content_hash: Option<&str>,
+    candidate_content_hash: &str,
+) -> bool {
+    latest_content_hash == Some(candidate_content_hash)
 }
 
 impl ClipboardOrderKey {
@@ -1756,5 +1755,55 @@ mod tests {
         assert!(enforce_notifications_enabled(&mut settings));
         assert!(settings.notifications_enabled);
         assert!(!enforce_notifications_enabled(&mut settings));
+    }
+
+    #[test]
+    fn unselected_file_targets_resolve_to_every_online_device() {
+        let current = test_device(DeviceConnectionState::Online, true);
+        let online = test_device(DeviceConnectionState::Online, false);
+        let offline = test_device(DeviceConnectionState::Offline, false);
+
+        let targets = select_transfer_targets(
+            vec![current, online.clone(), offline],
+            Some(&HashSet::new()),
+        );
+
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].id, online.id);
+    }
+
+    #[test]
+    fn selected_file_targets_preserve_the_explicit_device_set() {
+        let online = test_device(DeviceConnectionState::Online, false);
+        let offline = test_device(DeviceConnectionState::Offline, false);
+        let requested = HashSet::from([online.id, offline.id]);
+
+        let targets =
+            select_transfer_targets(vec![online.clone(), offline.clone()], Some(&requested));
+
+        assert_eq!(targets.len(), 2);
+        assert!(targets.iter().any(|device| device.id == online.id));
+        assert!(targets.iter().any(|device| device.id == offline.id));
+    }
+
+    #[test]
+    fn consecutive_clipboard_content_is_deduplicated() {
+        assert!(is_consecutive_clipboard_duplicate(Some("same"), "same"));
+        assert!(!is_consecutive_clipboard_duplicate(Some("older"), "newer"));
+        assert!(!is_consecutive_clipboard_duplicate(None, "first"));
+    }
+
+    fn test_device(connection_state: DeviceConnectionState, is_current: bool) -> DeviceView {
+        DeviceView {
+            id: Uuid::new_v4(),
+            name: "Test device".to_owned(),
+            platform: synchalo_core::DevicePlatform::Linux,
+            connection_state,
+            is_current,
+            address: None,
+            last_seen_at: None,
+            last_sync_at: None,
+            paused: false,
+        }
     }
 }

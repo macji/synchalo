@@ -1,16 +1,18 @@
 use std::{
     net::{IpAddr, SocketAddr},
-    sync::Arc,
     thread,
+    time::Duration,
 };
 
-use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
+use mdns_sd::{IfKind, ServiceDaemon, ServiceEvent, ServiceInfo, UnregisterStatus};
 use parking_lot::Mutex;
 use synchalo_core::{AppError, DevicePlatform, PROTOCOL_VERSION};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
 pub const SERVICE_TYPE: &str = "_synchalo._udp.local.";
+const UNREGISTER_TIMEOUT: Duration = Duration::from_secs(2);
+const GOODBYE_SETTLE_TIME: Duration = Duration::from_millis(200);
 
 #[derive(Debug, Clone)]
 pub struct DiscoveryConfig {
@@ -41,8 +43,8 @@ pub enum DiscoveryEvent {
 
 pub struct DiscoveryService {
     daemon: ServiceDaemon,
-    config: Arc<Mutex<DiscoveryConfig>>,
-    fullname: Arc<Mutex<String>>,
+    config: Mutex<DiscoveryConfig>,
+    fullname: String,
     events: Option<mpsc::UnboundedReceiver<DiscoveryEvent>>,
     listener: Option<thread::JoinHandle<()>>,
 }
@@ -50,6 +52,9 @@ pub struct DiscoveryService {
 impl DiscoveryService {
     pub fn start(config: DiscoveryConfig) -> Result<Self, AppError> {
         let daemon = ServiceDaemon::new().map_err(network_error)?;
+        daemon
+            .disable_interface(vec![IfKind::LoopbackV4, IfKind::LoopbackV6])
+            .map_err(network_error)?;
         let info = service_info(&config)?;
         let fullname = info.get_fullname().to_owned();
         daemon.register(info).map_err(network_error)?;
@@ -81,8 +86,8 @@ impl DiscoveryService {
 
         Ok(Self {
             daemon,
-            config: Arc::new(Mutex::new(config)),
-            fullname: Arc::new(Mutex::new(fullname)),
+            config: Mutex::new(config),
+            fullname,
             events: Some(events_rx),
             listener: Some(listener),
         })
@@ -97,12 +102,11 @@ impl DiscoveryService {
         if config.pairing_open == pairing_open {
             return Ok(());
         }
-        config.pairing_open = pairing_open;
-        let old_fullname = self.fullname.lock().clone();
-        let _ = self.daemon.unregister(&old_fullname);
-        let info = service_info(&config)?;
-        *self.fullname.lock() = info.get_fullname().to_owned();
-        self.daemon.register(info).map_err(network_error)
+        let mut updated = config.clone();
+        updated.pairing_open = pairing_open;
+        self.replace_registration(&updated)?;
+        *config = updated;
+        Ok(())
     }
 
     pub fn set_device_name(&self, device_name: String) -> Result<(), AppError> {
@@ -110,20 +114,34 @@ impl DiscoveryService {
         if config.device_name == device_name {
             return Ok(());
         }
-        config.device_name = device_name;
-        let old_fullname = self.fullname.lock().clone();
-        let _ = self.daemon.unregister(&old_fullname);
-        let info = service_info(&config)?;
-        *self.fullname.lock() = info.get_fullname().to_owned();
-        self.daemon.register(info).map_err(network_error)
+        let mut updated = config.clone();
+        updated.device_name = device_name;
+        self.replace_registration(&updated)?;
+        *config = updated;
+        Ok(())
+    }
+
+    fn replace_registration(&self, config: &DiscoveryConfig) -> Result<(), AppError> {
+        let status = self
+            .daemon
+            .unregister(&self.fullname)
+            .map_err(network_error)?
+            .recv_timeout(UNREGISTER_TIMEOUT)
+            .map_err(network_error)?;
+        match status {
+            UnregisterStatus::OK | UnregisterStatus::NotFound => {}
+        }
+        thread::sleep(GOODBYE_SETTLE_TIME);
+        self.daemon
+            .register(service_info(config)?)
+            .map_err(network_error)
     }
 }
 
 impl Drop for DiscoveryService {
     fn drop(&mut self) {
-        let fullname = self.fullname.lock().clone();
         let _ = self.daemon.stop_browse(SERVICE_TYPE);
-        let _ = self.daemon.unregister(&fullname);
+        let _ = self.daemon.unregister(&self.fullname);
         let _ = self.daemon.shutdown();
         if let Some(listener) = self.listener.take() {
             let _ = listener.join();
@@ -207,19 +225,65 @@ fn network_error(error: impl std::fmt::Display) -> AppError {
 
 #[cfg(test)]
 mod tests {
+    use std::time::{Duration, Instant};
+
     use super::*;
 
     #[test]
     fn pairing_flag_can_be_republished() {
+        let observer = ServiceDaemon::new().unwrap();
+        let events = observer.browse(SERVICE_TYPE).unwrap();
+        let device_id = Uuid::new_v4();
+        let expected_prefix = format!("sh-{}", &device_id.simple().to_string()[..12]);
         let service = DiscoveryService::start(DiscoveryConfig {
-            device_id: Uuid::new_v4(),
+            device_id,
             device_name: "Discovery test".to_owned(),
             platform: DevicePlatform::current(),
             port: 53_327,
             pairing_open: false,
         })
         .unwrap();
+
+        let initial_fullname = wait_for_pairing_state(&events, device_id, false);
+        assert!(initial_fullname.starts_with(&expected_prefix));
         service.set_pairing_open(true).unwrap();
+        assert_eq!(
+            wait_for_pairing_state(&events, device_id, true),
+            initial_fullname
+        );
         service.set_pairing_open(false).unwrap();
+        assert_eq!(
+            wait_for_pairing_state(&events, device_id, false),
+            initial_fullname
+        );
+
+        let _ = observer.stop_browse(SERVICE_TYPE);
+        let _ = observer.shutdown();
+    }
+
+    fn wait_for_pairing_state(
+        events: &mdns_sd::Receiver<ServiceEvent>,
+        device_id: Uuid,
+        expected: bool,
+    ) -> String {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let settle_for = Duration::from_millis(750);
+        let expected_id = device_id.to_string();
+        let mut last_match = None;
+        while Instant::now() < deadline {
+            if let Ok(ServiceEvent::ServiceResolved(info)) =
+                events.recv_timeout(Duration::from_millis(100))
+                && info.get_property_val_str("id") == Some(expected_id.as_str())
+                && (info.get_property_val_str("pair") == Some("1")) == expected
+            {
+                last_match = Some((Instant::now(), info.get_fullname().to_owned()));
+            }
+            if let Some((seen_at, fullname)) = &last_match
+                && seen_at.elapsed() >= settle_for
+            {
+                return fullname.clone();
+            }
+        }
+        panic!("timed out waiting for pairing_open={expected}");
     }
 }
