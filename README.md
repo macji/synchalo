@@ -124,3 +124,7 @@ macOS 不能直接链接 Ubuntu 的 WebKitGTK、GTK 和 AppIndicator 运行库�
 - 安全存储不可用时，应用使用内存数据库，不把敏感历史以弱保护方式写盘。
 
 完整产品定义见 [PRD.md](PRD.md)，UI 规范见 [UI-DESIGN.md](UI-DESIGN.md)，阶段计划见 [IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md)。
+
+## 自动发布
+
+版本 Tag 会通过 GitHub Actions 构建 Ubuntu Desktop ARM64 和 Windows x64，并发布到 GitHub Releases。macOS 继续在授权 Mac 上进行 Developer ID 签名和 Apple 公证。产物列表、可选 Windows 签名和发版命令见 [RELEASING.md](RELEASING.md)。
