@@ -32,7 +32,7 @@ Never commit certificates, private keys, or passwords.
 
 ## macOS Local Release
 
-macOS is intentionally excluded from GitHub Actions. Build it on the authorized Mac with the installed `Developer ID Application` identity, submit it through the `SyncHaloNotary` keychain profile, staple the accepted ticket, and replace `release/macos-arm64/` according to `AGENTS.md`. Apple credentials and certificates stay off GitHub.
+macOS is intentionally excluded from GitHub Actions. Build it on the authorized Mac with the installed `Developer ID Application` identity, submit it through the `SyncHaloNotary` keychain profile, staple the accepted ticket, and replace the Git-ignored local output under `release/macos-arm64/` according to `AGENTS.md`. Apple credentials, certificates, and generated release packages stay out of Git history.
 
 ## Create a Release
 

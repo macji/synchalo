@@ -18,23 +18,15 @@ SyncHalo 是一个本地优先的局域网粘贴板与文件同步工具。桌�
 - Tauri 状态栏/托盘图标、点击激活窗口、开机启动设置和系统文件选择器。
 - macOS ARM64 与 Ubuntu ARM64 原生 CI 构建。
 
-## 直接运行编译产物
+## 发布产物
 
-已编译的产物按平台放在 [`release/`](release/)：
+Linux 和 Windows 安装包由 GitHub Actions 构建并上传到 GitHub Releases。macOS 正式包在授权 Mac 上本地签名与公证，生成到被 Git 忽略的 `release/macos-arm64/`。
 
-```text
-release/
-├── macos-arm64/             # 已生成 SyncHalo.app 和 ZIP
-└── ubuntu-24.04-arm64/      # Ubuntu ARM64 原生构建脚本与说明
-```
-
-macOS Apple Silicon：
+本地已生成 macOS Apple Silicon 产物时，可以运行：
 
 ```bash
 open release/macos-arm64/SyncHalo.app
 ```
-
-详细说明与 Ubuntu ARM64 构建/运行方法见 [`release/README.md`](release/README.md)。
 
 ## 开发环境
 

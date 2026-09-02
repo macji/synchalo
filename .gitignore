@@ -12,6 +12,5 @@
 .env.*
 !.env.example
 
-# Release build output is ignored. Existing tracked macOS release assets stay
-# versioned intentionally; this rule prevents new generated files being added.
+# Release packages are generated artifacts and must never be versioned.
 /release/
