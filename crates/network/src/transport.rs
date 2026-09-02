@@ -340,9 +340,7 @@ impl LanTransport {
             .ok_or_else(|| AppError::Network("device is not trusted".to_owned()))?;
         let identity = self.inner.identity.read().clone();
         if peer.space_id != identity.space_id {
-            return Err(AppError::Network(
-                "device belongs to another sync space".to_owned(),
-            ));
+            return Err(AppError::SyncSpaceMismatch);
         }
         let connection = timeout(
             HANDSHAKE_TIMEOUT,
@@ -733,7 +731,7 @@ impl LanTransport {
             .ok_or_else(|| AppError::Network("device is not trusted".to_owned()))?;
         let identity = self.inner.identity.read().clone();
         if peer.space_id != identity.space_id {
-            return Err(AppError::Network("sync space mismatch".to_owned()));
+            return Err(AppError::SyncSpaceMismatch);
         }
         verify_signature(
             &peer.verifying_key,

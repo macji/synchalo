@@ -21,6 +21,7 @@ pub enum ErrorCode {
     TransferFailed,
     StorageUnavailable,
     NoSyncDevices,
+    SyncSpaceMismatch,
     InvalidInput,
     Internal,
 }
@@ -67,6 +68,8 @@ pub enum AppError {
     Clipboard(String),
     #[error("network unavailable: {0}")]
     Network(String),
+    #[error("trusted device belongs to another sync space")]
+    SyncSpaceMismatch,
     #[error("file operation failed: {0}")]
     File(String),
     #[error("insufficient disk space: need {required} bytes, {available} available")]
@@ -93,6 +96,10 @@ impl From<AppError> for UserFacingError {
             AppError::Network(detail) => {
                 Self::new(ErrorCode::NetworkUnreachable, "局域网连接不可用").detail(detail)
             }
+            AppError::SyncSpaceMismatch => Self::new(
+                ErrorCode::SyncSpaceMismatch,
+                "设备配对信息已不一致，请在两台设备上互相移除后重新配对",
+            ),
             AppError::File(detail) => {
                 Self::new(ErrorCode::TransferFailed, "文件操作失败").detail(detail)
             }
@@ -118,6 +125,17 @@ mod tests {
         let error = UserFacingError::from(AppError::NoSyncDevices);
         assert_eq!(error.code, ErrorCode::NoSyncDevices);
         assert_eq!(error.message, NO_SYNC_DEVICES_MESSAGE);
+        assert!(error.recoverable);
+    }
+
+    #[test]
+    fn sync_space_mismatch_requires_explicit_repair() {
+        let error = UserFacingError::from(AppError::SyncSpaceMismatch);
+        assert_eq!(error.code, ErrorCode::SyncSpaceMismatch);
+        assert_eq!(
+            error.message,
+            "设备配对信息已不一致，请在两台设备上互相移除后重新配对"
+        );
         assert!(error.recoverable);
     }
 }

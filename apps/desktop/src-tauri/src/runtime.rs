@@ -79,6 +79,7 @@ pub struct AppRuntime {
     clipboard: Mutex<Option<ClipboardMonitor>>,
     transfer_tasks: Mutex<HashMap<(Uuid, Uuid), tokio::task::AbortHandle>>,
     seen_clipboard_events: Mutex<HashSet<Uuid>>,
+    reported_space_mismatches: Mutex<HashSet<Uuid>>,
     last_applied_clipboard: Mutex<Option<ClipboardOrderKey>>,
     paused: AtomicBool,
     persistent_storage: bool,
@@ -176,6 +177,7 @@ impl AppRuntime {
             clipboard: Mutex::new(None),
             transfer_tasks: Mutex::new(HashMap::new()),
             seen_clipboard_events: Mutex::new(HashSet::new()),
+            reported_space_mismatches: Mutex::new(HashSet::new()),
             last_applied_clipboard: Mutex::new(None),
             paused: AtomicBool::new(false),
             persistent_storage,
@@ -537,6 +539,7 @@ impl AppRuntime {
         }
         let changed = self.database.revoke_device(id)?;
         if changed {
+            self.reported_space_mismatches.lock().remove(&id);
             self.transport.revoke_peer(id);
             self.emit_devices();
         }
@@ -946,6 +949,7 @@ impl AppRuntime {
                         Ok(())
                     }
                     TransportEvent::PeerOnline { device_id, address } => {
+                        runtime.reported_space_mismatches.lock().remove(&device_id);
                         runtime.update_peer_connection(device_id, true, Some(address))
                     }
                     TransportEvent::PeerOffline { device_id } => {
@@ -1076,9 +1080,21 @@ impl AppRuntime {
             if let Some(address) = address
                 && let Err(error) = runtime.transport.connect_trusted(peer_id, address).await
             {
-                tracing::debug!(%peer_id, %error, "scheduled peer reconnect failed");
+                runtime.handle_reconnect_error(peer_id, error);
             }
         });
+    }
+
+    fn handle_reconnect_error(&self, peer_id: Uuid, error: AppError) {
+        if matches!(&error, AppError::SyncSpaceMismatch) {
+            if self.reported_space_mismatches.lock().insert(peer_id) {
+                tracing::warn!(%peer_id, %error, "trusted peer requires re-pairing");
+                let user_error = UserFacingError::from(error);
+                let _ = self.app.emit(EVENT_USER_ERROR, user_error);
+            }
+        } else {
+            tracing::debug!(%peer_id, %error, "trusted peer reconnect failed");
+        }
     }
 
     fn apply_remote_clipboard(
@@ -1394,12 +1410,14 @@ impl AppRuntime {
                                 runtime.nearby.write().insert(peer_id, peer);
                                 runtime.emit_devices();
                                 if should_connect {
-                                    let transport = runtime.transport.clone();
+                                    let connect_runtime = runtime.clone();
                                     tauri::async_runtime::spawn(async move {
-                                        if let Err(error) =
-                                            transport.connect_trusted(peer_id, address).await
+                                        if let Err(error) = connect_runtime
+                                            .transport
+                                            .connect_trusted(peer_id, address)
+                                            .await
                                         {
-                                            tracing::debug!(%peer_id, %error, "trusted peer reconnect failed");
+                                            connect_runtime.handle_reconnect_error(peer_id, error);
                                         }
                                     });
                                 }
