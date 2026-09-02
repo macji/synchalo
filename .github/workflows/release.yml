@@ -27,6 +27,7 @@ jobs:
     name: Validate release tag
     runs-on: ubuntu-latest
     outputs:
+      commit: ${{ steps.release.outputs.commit }}
       prerelease: ${{ steps.release.outputs.prerelease }}
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
@@ -65,7 +66,8 @@ jobs:
             exit 1
           fi
 
-          git rev-parse --verify "refs/tags/$tag^{commit}" >/dev/null
+          commit="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "version=$tauri_version" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then
@@ -81,7 +83,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.metadata.outputs.tag }}
+          ref: ${{ needs.metadata.outputs.commit }}
 
       - name: Install Linux test dependencies
         run: |
@@ -117,14 +119,14 @@ jobs:
 
   build-linux:
     name: Build Ubuntu ARM64
-    needs: [metadata, verify]
+    needs: metadata
     runs-on: ubuntu-24.04-arm
     env:
       RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.metadata.outputs.tag }}
+          ref: ${{ needs.metadata.outputs.commit }}
 
       - name: Install Tauri Linux dependencies
         run: |
@@ -189,7 +191,7 @@ jobs:
 
   build-windows:
     name: Build Windows x64
-    needs: [metadata, verify]
+    needs: metadata
     runs-on: windows-latest
     outputs:
       signed: ${{ steps.signing.outputs.enabled }}
@@ -200,7 +202,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.metadata.outputs.tag }}
+          ref: ${{ needs.metadata.outputs.commit }}
 
       - id: signing
         name: Detect Windows signing certificate

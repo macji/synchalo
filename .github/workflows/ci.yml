@@ -9,19 +9,73 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "24"
+
 jobs:
   verify:
-    name: Verify · ${{ matrix.name }}
+    name: Verify shared source
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Linux test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            xdg-utils
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy,rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: . -> target
+          key: ci-verify-ubuntu-x64
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  package:
+    name: Package smoke · ${{ matrix.name }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - name: macOS ARM64
             os: macos-14
+            rust_target: aarch64-apple-darwin
             tauri_args: --target aarch64-apple-darwin --bundles app,dmg
+            artifact_name: synchalo-macos-arm64
+            cache_key: macos-arm64
           - name: Ubuntu ARM64
             os: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
             tauri_args: --target aarch64-unknown-linux-gnu --bundles deb,appimage
+            artifact_name: synchalo-ubuntu-arm64
+            cache_key: ubuntu-arm64
 
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
@@ -44,26 +98,20 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 24
+          node-version: ${{ env.NODE_VERSION }}
           cache: npm
           cache-dependency-path: package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy,rustfmt
-          targets: ${{ runner.os == 'macOS' && 'aarch64-apple-darwin' || 'aarch64-unknown-linux-gnu' }}
+          targets: ${{ matrix.rust_target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+          key: ci-package-${{ matrix.cache_key }}
 
       - run: npm ci
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
 
       - name: Build native Tauri bundle
         env:
@@ -72,7 +120,7 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: synchalo-${{ matrix.name }}
+          name: ${{ matrix.artifact_name }}
           path: |
             target/**/release/bundle/**/*.app
             target/**/release/bundle/**/*.dmg

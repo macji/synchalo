@@ -1,6 +1,6 @@
 # Desktop Release Deployment
 
-SyncHalo publishes Linux and Windows packages through `.github/workflows/release.yml`. A pushed version tag builds both platforms from the same commit, verifies the artifacts, generates `SHA256SUMS.txt`, and creates or updates the matching GitHub Release. macOS remains a local Developer ID build and notarization workflow.
+SyncHalo publishes Linux and Windows packages through `.github/workflows/release.yml`. A pushed version tag is resolved to an immutable commit SHA, then shared source verification and both platform builds run in parallel. Publishing waits for every job to pass, verifies the artifacts, generates `SHA256SUMS.txt`, and creates or updates the matching GitHub Release. macOS remains a local Developer ID build and notarization workflow.
 
 ## Release Outputs
 
