@@ -2,10 +2,13 @@ mod commands;
 mod runtime;
 mod tray;
 
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use runtime::AppRuntime;
-use tauri::Manager;
+use tauri::{Manager, webview::PageLoadEvent};
 #[cfg(target_os = "macos")]
 use tauri_plugin_autostart::MacosLauncher;
 
@@ -23,12 +26,21 @@ pub fn run() {
     let autostart = tauri_plugin_autostart::Builder::new();
     #[cfg(target_os = "macos")]
     let autostart = autostart.macos_launcher(MacosLauncher::LaunchAgent);
+    let initial_page_revealed = Arc::new(AtomicBool::new(false));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(autostart.build())
+        .on_page_load(move |webview, payload| {
+            if webview.label() == "main"
+                && payload.event() == PageLoadEvent::Finished
+                && !initial_page_revealed.swap(true, Ordering::Relaxed)
+            {
+                let _ = webview.window().show();
+            }
+        })
         .setup(|app| {
             let runtime =
                 tauri::async_runtime::block_on(AppRuntime::initialize(app.handle().clone()))?;

@@ -21,7 +21,8 @@
         "center": true,
         "resizable": true,
         "fullscreen": false,
-        "visible": true
+        "visible": false,
+        "backgroundColor": "#f5f6f8"
       }
     ],
     "security": {
