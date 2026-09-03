@@ -7,9 +7,19 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing version tag to publish, for example v0.1.0
+        description: Existing version tag to validate, build, or publish, for example v0.1.0
         required: true
         type: string
+      target:
+        description: Work to run; single-platform builds only upload Actions artifacts
+        required: true
+        default: all
+        type: choice
+        options:
+          - linux
+          - windows
+          - all
+          - validate-only
 
 permissions:
   contents: read
@@ -30,6 +40,7 @@ jobs:
       commit: ${{ steps.release.outputs.commit }}
       prerelease: ${{ steps.release.outputs.prerelease }}
       tag: ${{ steps.release.outputs.tag }}
+      target: ${{ steps.release.outputs.target }}
       version: ${{ steps.release.outputs.version }}
     steps:
       - uses: actions/checkout@v7
@@ -41,14 +52,23 @@ jobs:
         name: Validate version metadata
         env:
           REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          REQUESTED_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'all' }}
         shell: bash
         run: |
           set -euo pipefail
           tag="$REQUESTED_TAG"
+          target="$REQUESTED_TARGET"
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Invalid release tag: $tag" >&2
             exit 1
           fi
+          case "$target" in
+            linux|windows|all|validate-only) ;;
+            *)
+              echo "Invalid workflow target: $target" >&2
+              exit 1
+              ;;
+          esac
 
           tauri_version="$(jq -r '.version' apps/desktop/src-tauri/tauri.conf.json)"
           root_npm_version="$(jq -r '.version' package.json)"
@@ -69,6 +89,7 @@ jobs:
           commit="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "target=$target" >> "$GITHUB_OUTPUT"
           echo "version=$tauri_version" >> "$GITHUB_OUTPUT"
           if [[ "$tag" == *-* ]]; then
             echo "prerelease=true" >> "$GITHUB_OUTPUT"
@@ -79,6 +100,7 @@ jobs:
   verify:
     name: Verify release source
     needs: metadata
+    if: needs.metadata.outputs.target == 'all' || needs.metadata.outputs.target == 'validate-only'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
@@ -120,6 +142,7 @@ jobs:
   build-linux:
     name: Build Ubuntu ARM64
     needs: metadata
+    if: needs.metadata.outputs.target == 'all' || needs.metadata.outputs.target == 'linux'
     runs-on: ubuntu-24.04-arm
     env:
       RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
@@ -192,6 +215,7 @@ jobs:
   build-windows:
     name: Build Windows x64
     needs: metadata
+    if: needs.metadata.outputs.target == 'all' || needs.metadata.outputs.target == 'windows'
     runs-on: windows-latest
     outputs:
       signed: ${{ steps.signing.outputs.enabled }}
@@ -323,6 +347,13 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [metadata, verify, build-linux, build-windows]
+    if: |
+      always() &&
+      needs.metadata.result == 'success' &&
+      needs.verify.result == 'success' &&
+      needs.build-linux.result == 'success' &&
+      needs.build-windows.result == 'success' &&
+      needs.metadata.outputs.target == 'all'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -371,11 +402,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" release-assets/* --clobber
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" release-assets/* --clobber --repo "$GH_REPO"
             gh release edit "$RELEASE_TAG" \
               --title "SyncHalo $RELEASE_TAG" \
-              --notes-file release-notes.md
+              --notes-file release-notes.md \
+              --repo "$GH_REPO"
           else
             args=(
               release create "$RELEASE_TAG"
@@ -383,6 +415,7 @@ jobs:
               --verify-tag
               --title "SyncHalo $RELEASE_TAG"
               --notes-file release-notes.md
+              --repo "$GH_REPO"
             )
             if [[ "${{ needs.metadata.outputs.prerelease }}" == "true" ]]; then
               args+=(--prerelease)
