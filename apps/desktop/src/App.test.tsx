@@ -36,6 +36,7 @@ describe("SyncHalo shell", () => {
     expect(screen.getByRole("switch", { name: "删除同步" })).not.toBeChecked();
     expect(screen.getByRole("switch", { name: "收藏同步" })).not.toBeChecked();
     expect(screen.getByRole("switch", { name: "自动更新" })).toBeChecked();
+    expect(screen.getByText(/每 30 分钟检查/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("switch", { name: "删除同步" }));
     fireEvent.click(screen.getByRole("switch", { name: "收藏同步" }));
     await waitFor(() => {
@@ -44,6 +45,8 @@ describe("SyncHalo shell", () => {
     });
     fireEvent.click(screen.getByRole("switch", { name: "自动更新" }));
     await waitFor(() => expect(screen.getByRole("switch", { name: "自动更新" })).not.toBeChecked());
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    expect(await screen.findByText("当前已是最新版本。")).toBeInTheDocument();
     for (const removedDescription of [
       "用一次性短码把同一局域网内的设备加入你的同步空间。",
       "只有这里列出的可信设备可以接收内容。",

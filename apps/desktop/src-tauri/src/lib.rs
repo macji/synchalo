@@ -6,6 +6,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::Duration;
 
 use runtime::AppRuntime;
 use serde::Serialize;
@@ -15,13 +16,47 @@ use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_updater::UpdaterExt as _;
 
 const EVENT_UPDATE_STATUS: &str = "synchalo://update-status";
+const UPDATE_STARTUP_DELAY: Duration = Duration::from_secs(5);
+const UPDATE_POLL_INTERVAL: Duration = Duration::from_secs(30 * 60);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct UpdateStatus {
+pub struct UpdateStatus {
     state: &'static str,
     version: Option<String>,
     message: Option<String>,
+}
+
+#[derive(Default)]
+pub(crate) struct UpdateCoordinator {
+    in_progress: AtomicBool,
+}
+
+struct UpdatePermit {
+    coordinator: Arc<UpdateCoordinator>,
+}
+
+impl UpdateCoordinator {
+    fn try_acquire(self: &Arc<Self>) -> Option<UpdatePermit> {
+        self.in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .ok()
+            .map(|_| UpdatePermit {
+                coordinator: self.clone(),
+            })
+    }
+}
+
+impl Drop for UpdatePermit {
+    fn drop(&mut self) {
+        self.coordinator.in_progress.store(false, Ordering::Release);
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum UpdateTrigger {
+    Automatic,
+    Manual,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -57,9 +92,11 @@ pub fn run() {
         .setup(|app| {
             let runtime =
                 tauri::async_runtime::block_on(AppRuntime::initialize(app.handle().clone()))?;
+            let update_coordinator = Arc::new(UpdateCoordinator::default());
             app.manage::<Arc<AppRuntime>>(runtime.clone());
+            app.manage::<Arc<UpdateCoordinator>>(update_coordinator.clone());
             tray::install(app.handle(), runtime.clone())?;
-            start_automatic_update(app.handle().clone(), runtime.clone());
+            start_automatic_update(app.handle().clone(), runtime.clone(), update_coordinator);
 
             if let Some(window) = app.get_webview_window("main") {
                 let close_runtime = runtime;
@@ -95,6 +132,7 @@ pub fn run() {
             commands::set_device_paused,
             commands::pause_sync,
             commands::update_settings,
+            commands::check_for_updates,
             commands::select_receive_directory,
             commands::select_files,
             commands::paste_files,
@@ -113,66 +151,172 @@ pub fn run() {
         .expect("failed to run SyncHalo");
 }
 
-fn start_automatic_update(app: AppHandle, runtime: Arc<AppRuntime>) {
+fn start_automatic_update(
+    app: AppHandle,
+    runtime: Arc<AppRuntime>,
+    coordinator: Arc<UpdateCoordinator>,
+) {
     if cfg!(debug_assertions) {
         return;
     }
-    #[cfg(target_os = "linux")]
-    if std::env::var_os("APPIMAGE").is_none() {
+    if !supports_in_app_updates() {
         return;
     }
 
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
-        if !runtime.settings().automatic_updates_enabled {
-            return;
-        }
-        let update = match app.updater() {
-            Ok(updater) => match updater.check().await {
-                Ok(update) => update,
-                Err(error) => {
-                    tracing::debug!(%error, "automatic update check failed");
-                    return;
-                }
-            },
-            Err(error) => {
-                tracing::debug!(%error, "automatic updater is unavailable");
-                return;
+        let first_check = tokio::time::Instant::now() + UPDATE_STARTUP_DELAY;
+        let mut interval = tokio::time::interval_at(first_check, UPDATE_POLL_INTERVAL);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            if runtime.settings().automatic_updates_enabled {
+                let _ =
+                    run_update_check(app.clone(), coordinator.clone(), UpdateTrigger::Automatic)
+                        .await;
             }
-        };
-        let Some(update) = update else {
-            return;
-        };
-        let version = update.version.to_string();
-        let _ = app.emit(
-            EVENT_UPDATE_STATUS,
-            UpdateStatus {
-                state: "downloading",
-                version: Some(version.clone()),
-                message: None,
-            },
-        );
-        if let Err(error) = update.download_and_install(|_, _| {}, || {}).await {
-            tracing::warn!(%error, %version, "automatic update failed");
-            let _ = app.emit(
-                EVENT_UPDATE_STATUS,
-                UpdateStatus {
-                    state: "error",
-                    version: Some(version),
-                    message: Some("自动更新失败，请稍后重试或手动下载新版。".to_owned()),
-                },
-            );
-            return;
         }
-        let _ = app.emit(
-            EVENT_UPDATE_STATUS,
+    });
+}
+
+pub(crate) async fn check_for_updates_manually(
+    app: AppHandle,
+    coordinator: Arc<UpdateCoordinator>,
+) -> UpdateStatus {
+    if cfg!(debug_assertions) {
+        return emit_update_status(
+            &app,
+            UpdateStatus::message("unsupported", "开发版本不执行在线更新检查。"),
+        );
+    }
+    if !supports_in_app_updates() {
+        return emit_update_status(
+            &app,
+            UpdateStatus::message("unsupported", "DEB 安装请通过 APT 检查和安装更新。"),
+        );
+    }
+    run_update_check(app, coordinator, UpdateTrigger::Manual).await
+}
+
+async fn run_update_check(
+    app: AppHandle,
+    coordinator: Arc<UpdateCoordinator>,
+    trigger: UpdateTrigger,
+) -> UpdateStatus {
+    let Some(_permit) = coordinator.try_acquire() else {
+        let status = UpdateStatus::message("busy", "正在检查或安装更新，请稍候。");
+        return emit_for_trigger(&app, trigger, status);
+    };
+
+    if trigger == UpdateTrigger::Manual {
+        emit_update_status(&app, UpdateStatus::message("checking", "正在检查更新…"));
+    }
+
+    let updater = match app.updater() {
+        Ok(updater) => updater,
+        Err(error) => {
+            tracing::debug!(%error, "updater is unavailable");
+            let status = UpdateStatus::message("error", "更新服务暂时不可用，请稍后重试。");
+            return emit_for_trigger(&app, trigger, status);
+        }
+    };
+    let update = match updater.check().await {
+        Ok(update) => update,
+        Err(error) => {
+            tracing::debug!(%error, "update check failed");
+            let status = UpdateStatus::message("error", "检查更新失败，请确认网络连接后重试。");
+            return emit_for_trigger(&app, trigger, status);
+        }
+    };
+    let Some(update) = update else {
+        let status = UpdateStatus::message("upToDate", "当前已是最新版本。");
+        return emit_for_trigger(&app, trigger, status);
+    };
+
+    let version = update.version.to_string();
+    emit_update_status(
+        &app,
+        UpdateStatus {
+            state: "downloading",
+            version: Some(version.clone()),
+            message: None,
+        },
+    );
+    if let Err(error) = update.download_and_install(|_, _| {}, || {}).await {
+        tracing::warn!(%error, %version, "update installation failed");
+        return emit_update_status(
+            &app,
             UpdateStatus {
-                state: "installed",
+                state: "error",
                 version: Some(version),
-                message: None,
+                message: Some("更新安装失败，请稍后重试或手动下载新版。".to_owned()),
             },
         );
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        app.restart();
-    });
+    }
+
+    emit_update_status(
+        &app,
+        UpdateStatus {
+            state: "installed",
+            version: Some(version),
+            message: None,
+        },
+    );
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    app.restart()
+}
+
+fn emit_for_trigger(app: &AppHandle, trigger: UpdateTrigger, status: UpdateStatus) -> UpdateStatus {
+    if trigger == UpdateTrigger::Manual {
+        emit_update_status(app, status)
+    } else {
+        status
+    }
+}
+
+fn emit_update_status(app: &AppHandle, status: UpdateStatus) -> UpdateStatus {
+    let _ = app.emit(EVENT_UPDATE_STATUS, status.clone());
+    status
+}
+
+fn supports_in_app_updates() -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        std::env::var_os("APPIMAGE").is_some()
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        true
+    }
+}
+
+impl UpdateStatus {
+    fn message(state: &'static str, message: &str) -> Self {
+        Self {
+            state,
+            version: None,
+            message: Some(message.to_owned()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn update_checks_are_mutually_exclusive() {
+        let coordinator = Arc::new(UpdateCoordinator::default());
+        let permit = coordinator
+            .try_acquire()
+            .expect("first check acquires lock");
+        assert!(coordinator.try_acquire().is_none());
+        drop(permit);
+        assert!(coordinator.try_acquire().is_some());
+    }
+
+    #[test]
+    fn automatic_update_schedule_matches_product_policy() {
+        assert_eq!(UPDATE_STARTUP_DELAY, Duration::from_secs(5));
+        assert_eq!(UPDATE_POLL_INTERVAL, Duration::from_secs(30 * 60));
+    }
 }

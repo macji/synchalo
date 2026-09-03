@@ -148,6 +148,7 @@ def main() -> None:
         assert not page.get_by_role("switch", name="删除同步").is_checked()
         assert not page.get_by_role("switch", name="收藏同步").is_checked()
         assert page.get_by_role("switch", name="自动更新").is_checked()
+        assert page.get_by_text(re.compile(r"每 30 分钟检查")).count() == 1
         assert page.get_by_text(f"SyncHalo {APP_VERSION}", exact=True).is_visible()
         page.get_by_text("482 913").wait_for()
         assert page.locator(".section-intro p").count() == 0
@@ -157,6 +158,11 @@ def main() -> None:
             "element => getComputedStyle(element).gridTemplateColumns.split(' ')[0]"
         ) == "128px"
         page.screenshot(path=ARTIFACTS / "settings-light.png", full_page=True)
+        check_updates = page.get_by_role("button", name="检查更新")
+        check_updates.scroll_into_view_if_needed()
+        check_updates.click()
+        page.get_by_text("当前已是最新版本。", exact=True).wait_for()
+        page.screenshot(path=ARTIFACTS / "settings-update.png", full_page=True)
         page.get_by_role("button", name="加入", exact=True).click()
         join_dialog = page.get_by_role("dialog", name="加入另一台设备")
         join_dialog.wait_for()

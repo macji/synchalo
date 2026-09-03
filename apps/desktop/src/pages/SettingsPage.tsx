@@ -39,6 +39,7 @@ interface SettingsPageProps {
   onGenerateCode: () => void;
   onCopyCode: (code: string) => void;
   onJoin: (code: string) => void;
+  onCheckForUpdates: () => Promise<void>;
   onUpdate: (patch: SettingsPatch) => void;
   onSelectDirectory: () => void;
   onOpenDirectory: () => void;
@@ -63,6 +64,7 @@ export function SettingsPage({
   onGenerateCode,
   onCopyCode,
   onJoin,
+  onCheckForUpdates,
   onUpdate,
   onSelectDirectory,
   onOpenDirectory,
@@ -75,6 +77,7 @@ export function SettingsPage({
   const [editingName, setEditingName] = useState(false);
   const [deviceName, setDeviceName] = useState(settings.deviceName);
   const [joinDialogOpen, setJoinDialogOpen] = useState(false);
+  const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const joinInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -198,12 +201,27 @@ export function SettingsPage({
               onChange={(value) => onUpdate({ keepInTray: value })}
             />
           </SettingRow>
-          <SettingRow description="发现新版本后自动下载、验证、安装并重新启动。" label="自动更新">
+          <SettingRow description="启动约 5 秒后检查，之后每 30 分钟检查；发现新版后自动安装并重启。" label="自动更新">
             <Switch
               checked={settings.automaticUpdatesEnabled}
               label="自动更新"
               onChange={(value) => onUpdate({ automaticUpdatesEnabled: value })}
             />
+          </SettingRow>
+          <SettingRow description="立即向 GitHub Releases 查询当前平台的签名更新。" label="检查更新">
+            <button
+              aria-busy={checkingForUpdates}
+              className="button button--secondary button--small"
+              disabled={checkingForUpdates}
+              onClick={() => {
+                setCheckingForUpdates(true);
+                void onCheckForUpdates().finally(() => setCheckingForUpdates(false));
+              }}
+              type="button"
+            >
+              <RefreshCw className={checkingForUpdates ? "loading-spinner" : undefined} size={14} />
+              {checkingForUpdates ? "正在检查…" : "检查更新"}
+            </button>
           </SettingRow>
         </SettingsSection>
 

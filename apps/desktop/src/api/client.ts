@@ -238,6 +238,15 @@ export const api = {
     return structuredClone(mock.settings);
   },
 
+  async checkForUpdates(): Promise<UpdateStatusView> {
+    if (isTauri) return command("check_for_updates");
+    return {
+      state: "upToDate",
+      version: desktopPackage.version,
+      message: "当前已是最新版本。",
+    };
+  },
+
   async selectReceiveDirectory(): Promise<SettingsView | null> {
     if (isTauri) return command("select_receive_directory");
     mock.settings.receiveDirectory = "~/Downloads/SyncHalo";

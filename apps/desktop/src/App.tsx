@@ -10,6 +10,7 @@ import type {
   TransferHistoryFilter,
   TransferView,
   Unlisten,
+  UpdateStatusView,
   UserFacingError,
 } from "./api/types";
 import { ConfirmDialog, type ConfirmState } from "./components/ConfirmDialog";
@@ -106,6 +107,31 @@ export default function App() {
     (error: unknown) => {
       const normalized = normalizeError(error);
       pushToast({ message: normalized.message, tone: "warning" }, 6_000);
+    },
+    [pushToast],
+  );
+
+  const presentUpdateStatus = useCallback(
+    (status: UpdateStatusView) => {
+      if (status.state === "checking") {
+        pushToast({ message: status.message ?? "正在检查更新…", tone: "info" }, 3_000);
+      } else if (status.state === "upToDate") {
+        pushToast({ message: status.message ?? "当前已是最新版本。", tone: "success" });
+      } else if (status.state === "downloading") {
+        pushToast({
+          message: `正在更新到 SyncHalo ${status.version ?? "新版"}…`,
+          tone: "info",
+        }, 60_000);
+      } else if (status.state === "installed") {
+        pushToast({ message: "更新已安装，正在重新启动…", tone: "success" }, 10_000);
+      } else if (status.state === "unsupported" || status.state === "busy") {
+        pushToast({ message: status.message ?? "当前无法检查更新。", tone: "info" }, 6_000);
+      } else {
+        pushToast({
+          message: status.message ?? "自动更新失败，请手动下载新版。",
+          tone: "warning",
+        }, 10_000);
+      }
     },
     [pushToast],
   );
@@ -312,21 +338,7 @@ export default function App() {
         await api.onTransferChanged(() => refreshFileRef.current()),
         await api.onSyncStatusChanged((syncStatus) => setSnapshot((current) => current && { ...current, syncStatus })),
         await api.onUserError(reportError),
-        await api.onUpdateStatus((status) => {
-          if (status.state === "downloading") {
-            pushToast({
-              message: `正在自动更新到 SyncHalo ${status.version ?? "新版"}…`,
-              tone: "info",
-            }, 60_000);
-          } else if (status.state === "installed") {
-            pushToast({ message: "更新已安装，正在重新启动…", tone: "success" }, 10_000);
-          } else {
-            pushToast({
-              message: status.message ?? "自动更新失败，请手动下载新版。",
-              tone: "warning",
-            }, 10_000);
-          }
-        }),
+        await api.onUpdateStatus(presentUpdateStatus),
         await api.onNavigate(setRoute),
         await api.onFileDragDrop((event) => {
           if (event.type === "enter" || event.type === "over") {
@@ -350,7 +362,7 @@ export default function App() {
       timers.forEach((timer) => window.clearTimeout(timer));
       deviceOfflineDebouncer.dispose();
     };
-  }, [deviceOfflineDebouncer, enqueueFilePaths, pushToast, reportError]);
+  }, [deviceOfflineDebouncer, enqueueFilePaths, presentUpdateStatus, pushToast, reportError]);
 
   useEffect(() => {
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();
@@ -561,6 +573,14 @@ export default function App() {
             pushToast({ message: "同步码已复制", tone: "success" });
           }).catch(reportError);
         }}
+        onCheckForUpdates={async () => {
+          try {
+            const status = await api.checkForUpdates();
+            if (!api.isTauri) presentUpdateStatus(status);
+          } catch (error) {
+            reportError(error);
+          }
+        }}
         onGenerateCode={() => void api.generatePairingCode().then((pairingCode) => {
           setSnapshot((current) => current && { ...current, pairingCode });
         }).catch(reportError)}
@@ -648,6 +668,7 @@ export default function App() {
     loadFilePage,
     nativeFileDragging,
     paused,
+    presentUpdateStatus,
     pushToast,
     reportError,
     reportQueuedFiles,
