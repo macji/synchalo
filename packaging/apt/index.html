@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SyncHalo APT Repository</title>
+    <style>
+      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+      body { max-width: 820px; margin: 0 auto; padding: 48px 24px; line-height: 1.65; }
+      h1 { margin-bottom: 8px; }
+      pre { overflow-x: auto; padding: 16px; border-radius: 10px; background: #111827; color: #f9fafb; }
+      code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+    </style>
+  </head>
+  <body>
+    <h1>SyncHalo APT Repository</h1>
+    <p>适用于 Ubuntu 24.04 ARM64。首次安装需要添加一次签名密钥和软件源：</p>
+    <pre><code>sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://macji.github.io/synchalo/apt/synchalo-archive-keyring.gpg \
+  | sudo tee /etc/apt/keyrings/synchalo.gpg &gt;/dev/null
+echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/synchalo.gpg] https://macji.github.io/synchalo/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/synchalo.list &gt;/dev/null
+sudo apt-get update
+sudo apt-get install sync-halo</code></pre>
+    <p>以后运行 <code>sudo apt-get upgrade</code> 即可更新 SyncHalo。</p>
+  </body>
+</html>

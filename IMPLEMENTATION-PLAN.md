@@ -7,6 +7,13 @@
 | 桌面架构 | Tauri 2 + React/TypeScript/Vite + Rust |
 | 当前阶段 | M4：双平台验证与发布硬化 |
 
+## v0.1.3 发布计划
+
+1. **P0 稳定性门禁**：恢复普通 CI 的无密钥原生打包检查；正式发布在构建前校验全部 updater、SignPath 和 APT 凭据；任何签名、版本、架构或发布者校验失败都不得创建 GitHub Release。
+2. **Windows 可信发布者**：GitHub-hosted Windows runner 生成 MSI/NSIS，SignPath Foundation 对标签构建执行 Authenticode 签名，工作流验证发布者后重新生成 Tauri updater 签名。手动单平台产物保持非正式、未签名状态。
+3. **Ubuntu 签名 APT 源**：GitHub Actions 校验 ARM64 DEB，生成 `stable/main` 索引，用专用 GPG 密钥签署 `InRelease` 和 `Release.gpg`，验证后部署 GitHub Pages。
+4. **完整发版**：所有测试通过后，在授权 Mac 上完成 Developer ID 签名、Apple 公证和 staple；创建 `v0.1.3` 标签，等待 SignPath 人工批准，核验 APT、Windows、Linux、macOS 和 updater 清单后完成 Release。
+
 ## 1. MVP 交付边界
 
 首个可用版本必须完成：

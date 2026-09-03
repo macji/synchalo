@@ -29,6 +29,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            apt-utils \
+            dpkg-dev \
+            gnupg \
             libappindicator3-dev \
             librsvg2-dev \
             libssl-dev \
@@ -57,6 +60,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - run: bash -n scripts/*.sh
+      - run: tests/release/apt_repository_smoke.sh
 
   package:
     name: Package smoke · ${{ matrix.name }}
@@ -116,7 +121,10 @@ jobs:
       - name: Build native Tauri bundle
         env:
           APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && '-' || '' }}
-        run: npm run tauri -- build ${{ matrix.tauri_args }}
+        run: >-
+          npm run tauri -- build
+          ${{ matrix.tauri_args }}
+          --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - uses: actions/upload-artifact@v7
         with:

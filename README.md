@@ -21,13 +21,27 @@ SyncHalo 是一个本地优先的局域网粘贴板与文件同步工具。桌�
 
 ## 发布产物
 
-Linux 和 Windows 安装包由 GitHub Actions 构建并上传到 GitHub Releases。macOS 正式包在授权 Mac 上本地签名、公证，并由本机脚本上传到同一个 Release；Apple 签名材料不会进入 GitHub Actions。
+Linux 和 Windows 安装包由 GitHub Actions 构建并上传到 GitHub Releases。正式 Windows 安装包由 SignPath Foundation 完成 Authenticode 签名；Ubuntu ARM64 同时发布到由 GitHub Pages 托管的签名 APT 源。macOS 正式包在授权 Mac 上本地签名、公证，并由本机脚本上传到同一个 Release；任何平台的私钥都不会进入源码或 Git 历史。
 
 本地已生成 macOS Apple Silicon 产物时，可以运行：
 
 ```bash
 open release/macos-arm64/SyncHalo.app
 ```
+
+Ubuntu 24.04 ARM64 首次通过 APT 安装：
+
+```bash
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://macji.github.io/synchalo/apt/synchalo-archive-keyring.gpg \
+  | sudo tee /etc/apt/keyrings/synchalo.gpg >/dev/null
+echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/synchalo.gpg] https://macji.github.io/synchalo/apt stable main" \
+  | sudo tee /etc/apt/sources.list.d/synchalo.list >/dev/null
+sudo apt-get update
+sudo apt-get install sync-halo
+```
+
+以后使用系统常规的 `sudo apt-get upgrade` 更新。第一次添加源仍需要用户明确安装公钥；之后 APT 会拒绝没有该密钥有效签名的仓库元数据。
 
 ## 开发环境
 
@@ -120,4 +134,4 @@ macOS 不能直接链接 Ubuntu 的 WebKitGTK、GTK 和 AppIndicator 运行库�
 
 ## 自动发布
 
-版本 Tag 会通过 GitHub Actions 构建 Ubuntu Desktop ARM64 和 Windows x64；本机同时完成 macOS Developer ID 签名和 Apple 公证，再将三平台产物及 `latest.json` 汇总到同一 GitHub Release。完整发版使用 `scripts/release-all.sh <version>`，细节见 [RELEASING.md](RELEASING.md)。
+版本 Tag 会通过 GitHub Actions 构建 Ubuntu Desktop ARM64、发布签名 APT 源，并构建和 SignPath 签名 Windows x64；本机同时完成 macOS Developer ID 签名和 Apple 公证，再将三平台产物及 `latest.json` 汇总到同一 GitHub Release。完整发版使用 `scripts/release-all.sh <version>`，细节见 [RELEASING.md](RELEASING.md)。

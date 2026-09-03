@@ -120,9 +120,43 @@ jobs:
           echo "version=$tauri_version" >> "$GITHUB_OUTPUT"
           echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
+  preflight:
+    name: Verify publishing credentials
+    needs: metadata
+    runs-on: ubuntu-latest
+    env:
+      APT_GPG_FINGERPRINT: ${{ vars.APT_GPG_FINGERPRINT }}
+      APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+      APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+    steps:
+      - name: Require credentials for a complete release
+        if: needs.metadata.outputs.target == 'all'
+        shell: bash
+        run: |
+          set -euo pipefail
+          required=(
+            APT_GPG_FINGERPRINT
+            APT_GPG_PASSPHRASE
+            APT_GPG_PRIVATE_KEY
+            SIGNPATH_API_TOKEN
+            SIGNPATH_ORGANIZATION_ID
+            TAURI_SIGNING_PRIVATE_KEY
+            TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+          )
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required release credential: $name" >&2
+              exit 1
+            fi
+          done
+
   verify:
     name: Verify release source
-    needs: metadata
+    needs: [metadata, preflight]
     if: needs.metadata.outputs.target == 'all' || needs.metadata.outputs.target == 'validate-only'
     runs-on: ubuntu-24.04
     steps:
@@ -134,6 +168,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
+            apt-utils \
+            dpkg-dev \
+            gnupg \
             libappindicator3-dev \
             librsvg2-dev \
             libssl-dev \
@@ -161,10 +198,12 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
+      - run: bash -n scripts/*.sh
+      - run: tests/release/apt_repository_smoke.sh
 
   build-linux:
     name: Build Ubuntu ARM64
-    needs: metadata
+    needs: [metadata, preflight]
     if: needs.metadata.outputs.target == 'all' || needs.metadata.outputs.target == 'linux'
     runs-on: ubuntu-24.04-arm
     env:
@@ -244,69 +283,20 @@ jobs:
 
   build-windows:
     name: Build Windows x64
-    needs: metadata
+    needs: [metadata, preflight]
     if: needs.metadata.outputs.target == 'all' || needs.metadata.outputs.target == 'windows'
     runs-on: windows-latest
+    permissions:
+      actions: read
+      contents: read
     outputs:
-      signed: ${{ steps.signing.outputs.enabled }}
+      signed: ${{ steps.signing-result.outputs.enabled }}
     env:
       RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
-      WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
-      WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.metadata.outputs.commit }}
-
-      - id: signing
-        name: Detect Windows signing certificate
-        shell: pwsh
-        run: |
-          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE)) {
-            "enabled=false" >> $env:GITHUB_OUTPUT
-            Write-Warning "WINDOWS_CERTIFICATE is not configured; Windows installers will be unsigned."
-          } else {
-            if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD)) {
-              throw "WINDOWS_CERTIFICATE_PASSWORD is required when WINDOWS_CERTIFICATE is set."
-            }
-            "enabled=true" >> $env:GITHUB_OUTPUT
-          }
-
-      - name: Import optional Windows signing certificate
-        if: steps.signing.outputs.enabled == 'true'
-        shell: pwsh
-        run: |
-          $pfxPath = Join-Path $env:RUNNER_TEMP "synchalo-signing.pfx"
-          $configPath = Join-Path $env:RUNNER_TEMP "tauri.windows.signing.json"
-          [IO.File]::WriteAllBytes(
-            $pfxPath,
-            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
-          )
-          $password = ConvertTo-SecureString `
-            $env:WINDOWS_CERTIFICATE_PASSWORD `
-            -AsPlainText `
-            -Force
-          $certificate = @(
-            Import-PfxCertificate `
-              -FilePath $pfxPath `
-              -CertStoreLocation Cert:\CurrentUser\My `
-              -Password $password
-          ) | Where-Object HasPrivateKey | Select-Object -First 1
-          if ($null -eq $certificate) {
-            throw "The imported PFX does not contain a signing identity with a private key."
-          }
-
-          @{
-            bundle = @{
-              windows = @{
-                certificateThumbprint = $certificate.Thumbprint
-                digestAlgorithm = "sha256"
-                timestampUrl = "http://timestamp.digicert.com"
-                tsp = $true
-              }
-            }
-          } | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 $configPath
-          "WINDOWS_SIGNING_CONFIG=$configPath" >> $env:GITHUB_ENV
 
       - uses: actions/setup-node@v6
         with:
@@ -331,20 +321,14 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
-          $arguments = @(
-            "run", "tauri", "--", "build",
-            "--target", "x86_64-pc-windows-msvc",
-            "--bundles", "nsis,msi"
-          )
-          if (-not [string]::IsNullOrWhiteSpace($env:WINDOWS_SIGNING_CONFIG)) {
-            $arguments += @("--config", $env:WINDOWS_SIGNING_CONFIG)
-          }
-          & npm @arguments
+          npm run tauri -- build `
+            --target x86_64-pc-windows-msvc `
+            --bundles nsis,msi
           if ($LASTEXITCODE -ne 0) {
             exit $LASTEXITCODE
           }
 
-      - name: Verify and package Windows artifacts
+      - name: Stage Windows artifacts
         shell: pwsh
         run: |
           $bundleRoot = "target/x86_64-pc-windows-msvc/release/bundle"
@@ -354,7 +338,7 @@ jobs:
             throw "Expected MSI and NSIS installers were not produced."
           }
 
-          New-Item -ItemType Directory -Force release-assets | Out-Null
+          New-Item -ItemType Directory -Force release-assets,signpath-input | Out-Null
           $version = $env:RELEASE_VERSION
           $msiOutput = "release-assets/SyncHalo_${version}_windows-x64.msi"
           $exeOutput = "release-assets/SyncHalo_${version}_windows-x64-setup.exe"
@@ -367,14 +351,77 @@ jobs:
           Copy-Item $exe.FullName $exeOutput
           Copy-Item $msiSignature "$msiOutput.sig"
           Copy-Item $exeSignature "$exeOutput.sig"
+          Copy-Item $msiOutput signpath-input
+          Copy-Item $exeOutput signpath-input
 
-          if ("${{ steps.signing.outputs.enabled }}" -eq "true") {
-            foreach ($path in @($msiOutput, $exeOutput)) {
-              $signature = Get-AuthenticodeSignature $path
-              if ($signature.Status -ne "Valid") {
-                throw "Invalid Authenticode signature for ${path}: $($signature.Status)"
-              }
+      - id: upload-unsigned-windows
+        name: Upload unsigned installers for SignPath
+        if: needs.metadata.outputs.target == 'all'
+        uses: actions/upload-artifact@v7
+        with:
+          name: signpath-input-windows-x64
+          path: signpath-input/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Sign installers with SignPath Foundation
+        if: needs.metadata.outputs.target == 'all'
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: synchalo
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: windows-installers
+          github-artifact-id: ${{ steps.upload-unsigned-windows.outputs.artifact-id }}
+          github-token: ${{ github.token }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
+          output-artifact-directory: signpath-output
+          parameters: |
+            version: ${{ toJSON(needs.metadata.outputs.version) }}
+
+      - name: Verify SignPath signatures and refresh updater signatures
+        if: needs.metadata.outputs.target == 'all'
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          $expected = @(
+            "SyncHalo_$($env:RELEASE_VERSION)_windows-x64.msi",
+            "SyncHalo_$($env:RELEASE_VERSION)_windows-x64-setup.exe"
+          )
+          foreach ($name in $expected) {
+            $signed = Get-ChildItem signpath-output -Recurse -File -Filter $name | Select-Object -First 1
+            if ($null -eq $signed) {
+              throw "SignPath output does not contain $name."
             }
+            $destination = Join-Path release-assets $name
+            Copy-Item $signed.FullName $destination -Force
+            $signature = Get-AuthenticodeSignature $destination
+            if ($signature.Status -ne "Valid") {
+              throw "Invalid Authenticode signature for ${name}: $($signature.Status)"
+            }
+            if ($signature.SignerCertificate.Subject -notmatch "SignPath Foundation") {
+              throw "Unexpected Authenticode publisher for ${name}: $($signature.SignerCertificate.Subject)"
+            }
+            Remove-Item "$destination.sig" -Force
+            & npm run tauri -- signer sign $destination
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$destination.sig")) {
+              throw "Could not regenerate the updater signature for $name."
+            }
+          }
+
+      - id: signing-result
+        name: Record Windows signing status
+        shell: pwsh
+        run: |
+          if ("${{ needs.metadata.outputs.target }}" -eq "all") {
+            "enabled=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            Write-Warning "Manual Windows artifacts are unsigned; formal releases require SignPath."
           }
 
       - uses: actions/upload-artifact@v7
@@ -384,15 +431,74 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
-    name: Publish GitHub Release
-    needs: [metadata, verify, build-linux, build-windows]
+  publish-apt:
+    name: Publish signed APT repository
+    needs: [metadata, preflight, verify, build-linux]
     if: |
       always() &&
       needs.metadata.result == 'success' &&
+      needs.preflight.result == 'success' &&
+      needs.verify.result == 'success' &&
+      needs.build-linux.result == 'success' &&
+      needs.metadata.outputs.target == 'all'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      pages: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    env:
+      APT_GPG_FINGERPRINT: ${{ vars.APT_GPG_FINGERPRINT }}
+      APT_GPG_PASSPHRASE: ${{ secrets.APT_GPG_PASSPHRASE }}
+      APT_GPG_PRIVATE_KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+      RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.metadata.outputs.commit }}
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-linux-arm64
+          path: linux-assets
+
+      - name: Install APT repository tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils dpkg-dev gnupg
+
+      - name: Build and sign APT repository
+        shell: bash
+        run: scripts/build-apt-repository.sh linux-assets site
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+          include-hidden-files: true
+
+      - id: deployment
+        name: Deploy APT repository to GitHub Pages
+        uses: actions/deploy-pages@v5
+
+  publish:
+    name: Publish GitHub Release
+    needs: [metadata, preflight, verify, build-linux, build-windows, publish-apt]
+    if: |
+      always() &&
+      needs.metadata.result == 'success' &&
+      needs.preflight.result == 'success' &&
       needs.verify.result == 'success' &&
       needs.build-linux.result == 'success' &&
       needs.build-windows.result == 'success' &&
+      needs.publish-apt.result == 'success' &&
       needs.metadata.outputs.target == 'all'
     runs-on: ubuntu-latest
     permissions:
@@ -422,18 +528,17 @@ jobs:
             > SHA256SUMS.txt
           cd ..
 
-          if [[ "$WINDOWS_SIGNED" == "true" ]]; then
-            windows_status="Authenticode signed"
-          else
-            windows_status="Unsigned; Windows may display a SmartScreen warning"
+          if [[ "$WINDOWS_SIGNED" != "true" ]]; then
+            echo "Formal releases must contain SignPath-signed Windows installers." >&2
+            exit 1
           fi
           cat > release-notes.md <<EOF
           SyncHalo ${RELEASE_VERSION}
 
           Platform packages:
 
-          - Ubuntu Desktop ARM64: DEB and AppImage
-          - Windows x64: MSI and NSIS setup executable (${windows_status})
+          - Ubuntu Desktop ARM64: DEB, AppImage, and signed APT repository
+          - Windows x64: SignPath Foundation Authenticode-signed MSI and NSIS setup executable
 
           Signed updater artifacts are included for AppImage and Windows installations.
 
