@@ -1,0 +1,46 @@
+#!/bin/sh
+set -eu
+
+if [ "$(id -u)" -ne 0 ]; then
+  echo "SyncHalo update helper must run as root." >&2
+  exit 77
+fi
+if [ "$#" -ne 1 ]; then
+  echo "Usage: update-synchalo <version>" >&2
+  exit 64
+fi
+
+version="$1"
+if [ "${#version}" -gt 64 ] \
+  || ! printf '%s\n' "$version" \
+    | /usr/bin/grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.+~-][0-9A-Za-z.+~-]+)?$'; then
+  echo "Invalid SyncHalo version." >&2
+  exit 65
+fi
+
+source_file="/etc/apt/sources.list.d/synchalo.sources"
+if [ ! -f "$source_file" ]; then
+  echo "SyncHalo APT source is unavailable." >&2
+  exit 69
+fi
+
+/usr/bin/apt-get \
+  -o "Dir::Etc::sourcelist=$source_file" \
+  -o "Dir::Etc::sourceparts=-" \
+  -o "APT::Get::List-Cleanup=0" \
+  -o "DPkg::Lock::Timeout=60" \
+  update
+
+DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get \
+  -o "DPkg::Lock::Timeout=60" \
+  --only-upgrade \
+  --yes \
+  install "sync-halo=$version"
+
+installed_version="$(/usr/bin/dpkg-query -W -f='${Version}' sync-halo)"
+if [ "$installed_version" != "$version" ]; then
+  echo "SyncHalo $version was not installed." >&2
+  exit 70
+fi
+
+exit 0

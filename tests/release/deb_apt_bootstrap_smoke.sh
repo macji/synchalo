@@ -14,6 +14,8 @@ linux_config="$project_root/apps/desktop/src-tauri/tauri.linux.conf.json"
 source_file="$project_root/packaging/deb/synchalo.sources"
 key_file="$project_root/packaging/apt/synchalo-archive-keyring.asc"
 postinst_file="$project_root/packaging/deb/postinst"
+update_helper="$project_root/packaging/deb/update-synchalo"
+update_policy="$project_root/packaging/deb/io.synchalo.desktop.update.policy"
 expected_fingerprint="D12C8DBA7726A408BBDEC87FA4C4CF3A9C37E151"
 test_root="$(mktemp -d /tmp/synchalo-deb-bootstrap.XXXXXX)"
 cleanup() {
@@ -30,8 +32,12 @@ jq -e \
   --arg source_path "../../../packaging/deb/synchalo.sources" \
   --arg key_path "../../../packaging/apt/synchalo-archive-keyring.asc" \
   --arg postinst_path "../../../packaging/deb/postinst" \
+  --arg helper_path "../../../packaging/deb/update-synchalo" \
+  --arg policy_path "../../../packaging/deb/io.synchalo.desktop.update.policy" \
   '.bundle.linux.deb.files["/etc/apt/sources.list.d/synchalo.sources"] == $source_path
+    and .bundle.linux.deb.files["/usr/lib/synchalo/update-synchalo"] == $helper_path
     and .bundle.linux.deb.files["/usr/share/keyrings/synchalo-archive-keyring.asc"] == $key_path
+    and .bundle.linux.deb.files["/usr/share/polkit-1/actions/io.synchalo.desktop.update.policy"] == $policy_path
     and .bundle.linux.deb.postInstallScript == $postinst_path' \
   "$tauri_config" >/dev/null
 jq -e \
@@ -79,6 +85,19 @@ if [[ "$actual_fingerprint" != "$expected_fingerprint" ]]; then
   exit 1
 fi
 
+if ! rg -q '<allow_active>auth_admin</allow_active>' "$update_policy" \
+  || ! rg -q '<annotate key="org.freedesktop.policykit.exec.path">/usr/lib/synchalo/update-synchalo</annotate>' "$update_policy"; then
+  echo "Unexpected SyncHalo Polkit policy." >&2
+  exit 1
+fi
+if "$update_helper" 0.1.7 >/dev/null 2>&1; then
+  echo "The update helper unexpectedly ran without root privileges." >&2
+  exit 1
+elif [[ $? -ne 77 ]]; then
+  echo "The update helper did not reject an unprivileged caller safely." >&2
+  exit 1
+fi
+
 if [[ $# -gt 1 ]]; then
   echo "Usage: tests/release/deb_apt_bootstrap_smoke.sh [package.deb]" >&2
   exit 2
@@ -96,6 +115,10 @@ if [[ $# -eq 1 ]]; then
   fi
   if [[ "$(dpkg-deb -f "$deb_package" Architecture)" != "arm64" ]]; then
     echo "Unexpected Debian package architecture." >&2
+    exit 1
+  fi
+  if ! dpkg-deb -f "$deb_package" Depends | tr ',' '\n' | sed 's/^ *//' | grep -Eq '^pkexec([[:space:](]|$)'; then
+    echo "Built DEB does not depend on pkexec." >&2
     exit 1
   fi
 
@@ -124,6 +147,20 @@ if [[ $# -eq 1 ]]; then
 
   if ! cmp -s "$postinst_file" "$control_root/postinst"; then
     echo "Built DEB does not contain the expected post-install migration." >&2
+    exit 1
+  fi
+
+  if ! cmp -s "$update_helper" "$package_root/usr/lib/synchalo/update-synchalo"; then
+    echo "Built DEB does not contain the expected update helper." >&2
+    exit 1
+  fi
+  if ! cmp -s "$update_policy" "$package_root/usr/share/polkit-1/actions/io.synchalo.desktop.update.policy"; then
+    echo "Built DEB does not contain the expected Polkit policy." >&2
+    exit 1
+  fi
+  helper_mode="$(stat -c '%a' "$package_root/usr/lib/synchalo/update-synchalo")"
+  if [[ "$helper_mode" != "755" ]]; then
+    echo "Built DEB update helper mode is $helper_mode, expected 755." >&2
     exit 1
   fi
 fi

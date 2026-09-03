@@ -247,17 +247,9 @@ export const api = {
     if (isTauri) return command("check_for_updates");
     const mockUpdate = new URLSearchParams(window.location.search).get("mockUpdate");
     if (mockUpdate === "available" || mockUpdate === "ready") {
-      if (mock.settings.ignoredUpdateVersion === "0.1.5") {
-        return {
-          state: "ignored",
-          version: "0.1.5",
-          notes: null,
-          message: "这个版本已被忽略，将在更高版本发布后再次提醒。",
-        };
-      }
       return {
         state: mockUpdate,
-        version: "0.1.5",
+        version: "0.1.8",
         notes: "- 更新提醒支持发布说明\n- 自动下载后由用户确认安装\n- 改进局域网同步稳定性",
         message: null,
       };
@@ -287,7 +279,7 @@ export const api = {
       state: "ignored",
       version,
       notes: null,
-      message: "已忽略这个版本；有更高版本时会再次提醒。",
+      message: "已忽略这个版本的自动提醒；手动检查时仍可查看和安装。",
     };
   },
 

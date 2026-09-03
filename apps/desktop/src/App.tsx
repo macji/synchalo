@@ -134,6 +134,9 @@ export default function App() {
         pushToast({ message: "正在安装更新并准备重新启动…", tone: "info" }, 60_000);
       } else if (status.state === "installed") {
         pushToast({ message: "更新已安装，正在重新启动…", tone: "success" }, 10_000);
+      } else if (status.state === "cancelled") {
+        setUpdatePrompt(null);
+        pushToast({ message: status.message ?? "更新安装已取消。", tone: "info" }, 6_000);
       } else if (
         status.state === "unsupported" ||
         status.state === "busy" ||

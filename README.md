@@ -14,8 +14,9 @@ SyncHalo 是一款本地优先的局域网剪贴板与文件同步工具。它�
 - 提供剪贴板历史、文件历史、搜索、收藏、再次同步和后端分页。
 - 删除同步与收藏同步可独立开启，默认关闭。
 - 支持托盘驻留、暂停同步、开机启动、自定义接收目录和设备管理。
-- macOS 和 Windows 启动约 5 秒后检查更新，之后每 30 分钟检查一次，也可手动检查。
-- macOS 和 Windows 关闭自动更新时显示新版说明，由用户选择立即更新或忽略该版本；开启后后台下载并验签，安装前仍会请求确认。Ubuntu 由签名 APT 源更新。
+- 启动约 5 秒后检查更新，之后每 30 分钟检查一次，也可手动检查。
+- 忽略版本只停止启动和定时提醒；手动检查仍会重新显示该版本。
+- macOS 和 Windows 可后台下载验签并等待确认安装；Ubuntu 在确认后弹出管理员授权，通过签名 APT 源安装并重启。
 
 ## 安全与隐私
 
@@ -25,6 +26,7 @@ SyncHalo 是一款本地优先的局域网剪贴板与文件同步工具。它�
 - Rust 生成的本地 KEK 保存在权限为 `0600` 的 `synchalo.key`；数据库只保存包装后的数据密钥和加密身份。
 - 私钥、文件字节、数据库句柄和密码学操作不会进入 WebView。
 - 生产页面只加载应用内静态资源，日志不会记录剪贴板或文件内容。
+- Ubuntu 的管理员 helper 只接受受限版本号，并且只能通过固定签名源升级 `sync-halo` 包；应用本身不获得 root 权限。
 
 ## 下载与安装
 
@@ -33,7 +35,7 @@ SyncHalo 是一款本地优先的局域网剪贴板与文件同步工具。它�
 | 平台 | 架构 | 安装包 | 更新方式 |
 | --- | --- | --- | --- |
 | macOS 13+ | Apple Silicon（ARM64） | ZIP 中的 `.app` | 应用内签名更新 |
-| Ubuntu 24.04 | ARM64 | `.deb` | 签名 APT 系统更新 |
+| Ubuntu 24.04 | ARM64 | `.deb` | 应用提醒、Polkit 授权、签名 APT 安装 |
 | Windows 10/11 | x64 | NSIS `.exe`、`.msi` | 应用内签名更新 |
 
 请先在 [GitHub Releases](https://github.com/macji/synchalo/releases/latest) 下载当前平台的最新版。
@@ -60,7 +62,9 @@ sudo apt install ./SyncHalo_*_ubuntu-arm64.deb
 sudo apt update
 ```
 
-DEB 会自动安装 SyncHalo 的公开 APT 签名密钥和 Deb822 软件源配置。以后 Ubuntu 软件更新器或以下命令会从签名源获取新版：
+DEB 会自动安装 SyncHalo 的公开 APT 签名密钥、Deb822 软件源、受限更新 helper 和 Polkit policy。发现新版后，SyncHalo 会显示版本和发布说明；点击“立即更新”将弹出 Ubuntu 管理员授权窗口，APT 验证并安装指定版本后自动重启应用。
+
+仍可使用 Ubuntu 软件更新器或以下命令手动更新：
 
 ```bash
 sudo apt update

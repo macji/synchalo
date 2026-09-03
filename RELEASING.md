@@ -14,7 +14,7 @@ Manual workflow runs accept a source `ref` and a `target` choice. The ref can be
 
 The repository variable `WINDOWS_SIGNING_MODE` makes Windows release intent explicit. Set it to `signpath` for SignPath Foundation Authenticode signing, or temporarily to `unsigned` while the OSS application is under review. Unsigned release notes always disclose the warning. Manual `windows` builds remain unsigned short-lived Actions artifacts and never update a GitHub Release.
 
-Ubuntu repository metadata is signed by the dedicated SyncHalo APT key. The private key is stored only as an encrypted local backup and GitHub Actions secrets; GitHub Pages contains the public key, signed metadata, and the current ARM64 DEB. The public ASCII key and a Deb822 source definition are also embedded in every DEB under `/usr/share/keyrings/` and `/etc/apt/sources.list.d/`, so one standalone installation enrolls the signed source for later system updates. The DEB post-install migration removes the exact legacy `synchalo.list` created by older official instructions, but preserves any customized file. The release build verifies that this pinned public key matches the private release key. A downloaded standalone DEB can still be described as an unknown source during that first installation; subsequent APT metadata and packages are authenticated by the enrolled source.
+Ubuntu repository metadata is signed by the dedicated SyncHalo APT key. The private key is stored only as an encrypted local backup and GitHub Actions secrets; GitHub Pages contains the public key, signed metadata, and the current ARM64 DEB. The public ASCII key, Deb822 source, restricted update helper, and Polkit policy are embedded in every DEB. The desktop process remains unprivileged; after explicit confirmation, `pkexec` authorizes only `/usr/lib/synchalo/update-synchalo`, which validates a bounded version and asks APT to install exactly `sync-halo=<version>` from the signed source. The DEB post-install migration removes the exact legacy `synchalo.list` created by older official instructions, but preserves any customized file. The release build verifies that this pinned public key matches the private release key. A downloaded standalone DEB can still be described as an unknown source during that first installation; subsequent APT metadata and packages are authenticated by the enrolled source.
 
 ## Required GitHub Secrets
 
@@ -83,13 +83,13 @@ Keep these versions identical before tagging:
 Commit and push the version change, then validate without creating a tag:
 
 ```bash
-scripts/release.sh 0.1.6 --dry-run
+scripts/release.sh 0.1.7 --dry-run
 ```
 
 Trigger the release:
 
 ```bash
-scripts/release-all.sh 0.1.6
+scripts/release-all.sh 0.1.7
 ```
 
 For a faster non-publishing platform build, open **Actions → Publish Linux and Windows Release → Run workflow**, set `ref` to `main` (or another branch, tag, or commit), then choose `linux`, `windows`, or `validate-only`. Choose `all` only with a matching version tag when the manual run should create or update the complete GitHub Release.
@@ -98,6 +98,6 @@ The scripts require a clean `main` branch that exactly matches `origin/main`. `r
 
 ## Automatic Updates
 
-The public repository exposes `https://github.com/macji/synchalo/releases/latest/download/latest.json` for macOS and Windows. Production builds on those platforms check this manifest about five seconds after startup and every 30 minutes afterward, and Settings provides a manual check. When automatic updates are disabled, the app shows the version and release notes before downloading; users can install or persistently ignore that exact version, and a later version restores reminders. When enabled, it downloads and verifies into a private temporary file, then waits for explicit “Install and restart” confirmation. Concurrent operations are collapsed into one, and cached bytes are digest-checked again before installation. Ubuntu ships only as DEB and updates through the signed APT source or manual package installation. Windows updater signatures are regenerated after SignPath because Authenticode changes the installer bytes.
+The public repository exposes `https://github.com/macji/synchalo/releases/latest/download/latest.json`. Production builds check its bounded version metadata about five seconds after startup and every 30 minutes afterward, and Settings provides a manual check. Ignoring a version suppresses only automatic checks; a manual check always shows the available version again. On macOS and Windows, disabling automatic updates shows notes before download, while enabling it downloads and verifies into a private temporary file before asking to install and restart. Ubuntu never treats the DEB as a Tauri updater payload: it shows the same release notes, then uses Polkit and the packaged helper to run an exact-version APT upgrade after user confirmation. APT authenticates repository metadata and package hashes before the app restarts. Concurrent operations are collapsed into one. Windows updater signatures are regenerated after SignPath because Authenticode changes installer bytes.
 
 References: [GitHub Releases access](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases), [Tauri GitHub pipeline](https://v2.tauri.app/distribute/pipelines/github/).

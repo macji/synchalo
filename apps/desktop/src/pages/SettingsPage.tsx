@@ -220,14 +220,19 @@ export function SettingsPage({
               onChange={(value) => onUpdate({ keepInTray: value })}
             />
           </SettingRow>
-          <SettingRow description="启动后及每 30 分钟检查；开启后自动下载并等待确认安装，关闭后只提醒。" label="自动更新">
+          <SettingRow
+            description={capabilities.platform === "linux"
+              ? "启动后及每 30 分钟检查；确认更新后由 Ubuntu 请求管理员授权并通过 APT 安装。"
+              : "启动后及每 30 分钟检查；开启后自动下载并等待确认安装，关闭后只提醒。"}
+            label="自动更新"
+          >
             <Switch
               checked={settings.automaticUpdatesEnabled}
               label="自动更新"
               onChange={(value) => onUpdate({ automaticUpdatesEnabled: value })}
             />
           </SettingRow>
-          <SettingRow description="立即向 GitHub Releases 查询当前平台的签名更新。" label="检查更新">
+          <SettingRow description="立即查询 GitHub Releases；手动检查会显示曾忽略的版本。" label="检查更新">
             <button
               aria-busy={checkingForUpdates}
               className="button button--secondary button--small"

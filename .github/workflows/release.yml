@@ -557,7 +557,7 @@ jobs:
           - Ubuntu Desktop ARM64: DEB with automatic signed APT enrollment and signed APT repository
           - Windows x64: MSI and NSIS setup executable (${windows_status})
 
-          Signed updater artifacts are included for Windows installations. Ubuntu updates through APT.
+          Signed updater artifacts are included for Windows installations. Ubuntu confirms updates in-app, then installs through Polkit-authorized APT.
 
           Verify downloads with \`SHA256SUMS.txt\`.
           EOF

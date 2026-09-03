@@ -166,6 +166,7 @@ export interface UpdateStatusView {
     | "installing"
     | "installed"
     | "ignored"
+    | "cancelled"
     | "error"
     | "unsupported"
     | "busy";

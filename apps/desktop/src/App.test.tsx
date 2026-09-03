@@ -87,7 +87,7 @@ describe("SyncHalo shell", () => {
       state: "ignored",
       version: "0.1.4",
       notes: null,
-      message: "已忽略这个版本；有更高版本时会再次提醒。",
+      message: "已忽略这个版本的自动提醒；手动检查时仍可查看和安装。",
     });
 
     render(<App />);
@@ -109,7 +109,9 @@ describe("SyncHalo shell", () => {
     const reopened = await screen.findByRole("dialog", { name: "发现新版本" });
     fireEvent.click(within(reopened).getByRole("button", { name: "忽略此版本" }));
     await waitFor(() => expect(ignore).toHaveBeenCalledWith("0.1.4"));
-    expect(check).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    expect(await screen.findByRole("dialog", { name: "发现新版本" })).toBeInTheDocument();
+    expect(check).toHaveBeenCalledTimes(3);
   });
 
   it("asks to install and restart after an automatic download is ready", async () => {
