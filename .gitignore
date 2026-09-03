@@ -3,6 +3,7 @@
 /apps/desktop/node_modules/
 /apps/desktop/dist/
 /apps/desktop/src-tauri/target/
+/artifacts/*.zip
 .DS_Store
 *.log
 *.db
