@@ -1690,6 +1690,71 @@ button.sync-device-row.is-selected {
   line-height: 1.58;
 }
 
+.update-dialog {
+  width: min(520px, 100%);
+}
+
+.update-hero {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  align-items: start;
+  gap: 15px;
+}
+
+.update-symbol {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--accent-border);
+  border-radius: 16px;
+  place-items: center;
+  background: linear-gradient(145deg, var(--selected), var(--surface-raised));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 18%);
+  color: var(--accent);
+}
+
+.update-hero > div:last-child {
+  display: grid;
+  gap: 3px;
+}
+
+.update-kicker,
+.update-notes > span {
+  color: var(--text-tertiary);
+  font-size: 9px;
+  font-weight: 720;
+  letter-spacing: 0.14em;
+}
+
+.update-hero strong {
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.update-hero p,
+.update-notes p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.update-notes {
+  display: grid;
+  max-height: 210px;
+  margin-top: 18px;
+  padding: 13px 14px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  gap: 7px;
+  background: var(--surface-soft);
+}
+
+.update-notes p {
+  white-space: pre-wrap;
+}
+
 .dialog-actions {
   display: flex;
   margin-top: 8px;

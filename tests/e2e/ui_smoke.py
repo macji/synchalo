@@ -191,6 +191,35 @@ def main() -> None:
         assert dimensions["width"] <= dimensions["viewport"]
         page.screenshot(path=ARTIFACTS / "clipboard-minimum.png", full_page=True)
 
+        page.set_viewport_size({"width": 1280, "height": 800})
+        page.goto(f"{BASE_URL}?mockUpdate=available")
+        page.wait_for_load_state("networkidle")
+        page.get_by_role("button", name="设置 ⌘,").click()
+        automatic_update = page.get_by_role("switch", name="自动更新")
+        if automatic_update.is_checked():
+            automatic_update.click()
+        page.get_by_role("button", name="检查更新").click()
+        available_dialog = page.get_by_role("dialog", name="发现新版本")
+        available_dialog.wait_for()
+        assert available_dialog.get_by_text("SyncHalo 0.1.5").is_visible()
+        assert available_dialog.get_by_text("更新提醒支持发布说明", exact=False).is_visible()
+        assert available_dialog.get_by_role("button", name="立即更新").is_visible()
+        page.screenshot(path=ARTIFACTS / "update-available-light.png", full_page=True)
+        available_dialog.get_by_role("button", name="取消").click()
+
+        page.goto(f"{BASE_URL}?mockUpdate=ready")
+        page.wait_for_load_state("networkidle")
+        page.get_by_role("button", name="设置 ⌘,").click()
+        page.get_by_role("button", name="检查更新").click()
+        ready_dialog = page.get_by_role("dialog", name="更新已下载")
+        ready_dialog.wait_for()
+        assert ready_dialog.get_by_role("button", name="安装并重启").is_visible()
+        page.screenshot(path=ARTIFACTS / "update-ready-light.png", full_page=True)
+        page.emulate_media(color_scheme="dark")
+        page.wait_for_timeout(150)
+        page.screenshot(path=ARTIFACTS / "update-ready-dark.png", full_page=True)
+        ready_dialog.get_by_role("button", name="稍后").click()
+
         browser.close()
 
     if console_errors:

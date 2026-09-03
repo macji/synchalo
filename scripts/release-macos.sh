@@ -164,7 +164,7 @@ if [[ -n "$running_pids" ]]; then
 fi
 
 npm run lint
-npm test -- --run
+npm test
 npm run build
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
@@ -317,9 +317,10 @@ windows_signature="$(tr -d '\r\n' < "$signature_dir/$windows_signature_name")"
 mac_signature="$(tr -d '\r\n' < "$upload_dir/$mac_signature_name")"
 published_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 release_base_url="https://github.com/$github_repository/releases/download/$tag"
+release_notes="$(gh release view "$tag" --repo "$github_repository" --json body --jq .body)"
 jq -n \
   --arg version "$version" \
-  --arg notes "SyncHalo $version" \
+  --arg notes "$release_notes" \
   --arg pub_date "$published_at" \
   --arg linux_url "$release_base_url/SyncHalo_${version}_linux-arm64.AppImage" \
   --arg linux_signature "$linux_signature" \

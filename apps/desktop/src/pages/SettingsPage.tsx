@@ -201,7 +201,7 @@ export function SettingsPage({
               onChange={(value) => onUpdate({ keepInTray: value })}
             />
           </SettingRow>
-          <SettingRow description="启动约 5 秒后检查，之后每 30 分钟检查；发现新版后自动安装并重启。" label="自动更新">
+          <SettingRow description="启动后及每 30 分钟检查；开启后自动下载并等待确认安装，关闭后只提醒。" label="自动更新">
             <Switch
               checked={settings.automaticUpdatesEnabled}
               label="自动更新"

@@ -522,6 +522,11 @@ jobs:
       RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
       WINDOWS_SIGNED: ${{ needs.build-windows.outputs.signed }}
     steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ needs.metadata.outputs.commit }}
+
       - uses: actions/download-artifact@v8
         with:
           pattern: release-*
@@ -545,8 +550,18 @@ jobs:
           else
             windows_status="unsigned while SignPath approval is pending; Windows may display an Unknown publisher or SmartScreen warning"
           fi
+          previous_tag="$(git describe --tags --abbrev=0 "$RELEASE_TAG^" 2>/dev/null || true)"
+          if [[ -n "$previous_tag" ]]; then
+            changes="$(git log --format='- %s' "$previous_tag..$RELEASE_TAG")"
+          else
+            changes="$(git log -n 20 --format='- %s' "$RELEASE_TAG")"
+          fi
           cat > release-notes.md <<EOF
           SyncHalo ${RELEASE_VERSION}
+
+          Changes:
+
+          ${changes}
 
           Platform packages:
 

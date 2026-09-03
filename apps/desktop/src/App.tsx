@@ -17,6 +17,7 @@ import { ConfirmDialog, type ConfirmState } from "./components/ConfirmDialog";
 import { HaloMark } from "./components/HaloMark";
 import { Sidebar } from "./components/Sidebar";
 import { ToastRegion, type ToastView } from "./components/ToastRegion";
+import { UpdateDialog } from "./components/UpdateDialog";
 import { DeviceOfflineDebouncer } from "./lib/devicePresence";
 import { NO_SYNC_DEVICES_MESSAGE } from "./lib/messages";
 import { ClipboardPage } from "./pages/ClipboardPage";
@@ -35,6 +36,7 @@ export default function App() {
   const [fatalError, setFatalError] = useState<UserFacingError | null>(null);
   const [toasts, setToasts] = useState<ToastView[]>([]);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
+  const [updatePrompt, setUpdatePrompt] = useState<UpdateStatusView | null>(null);
   const [fileTargetIds, setFileTargetIds] = useState<string[] | null>(null);
   const [nativeFileDragging, setNativeFileDragging] = useState(false);
   const [fileView, setFileView] = useState<{
@@ -116,12 +118,19 @@ export default function App() {
       if (status.state === "checking") {
         pushToast({ message: status.message ?? "正在检查更新…", tone: "info" }, 3_000);
       } else if (status.state === "upToDate") {
+        setUpdatePrompt(null);
         pushToast({ message: status.message ?? "当前已是最新版本。", tone: "success" });
+      } else if (status.state === "available" || status.state === "ready") {
+        setUpdatePrompt(status);
       } else if (status.state === "downloading") {
+        setUpdatePrompt(null);
         pushToast({
-          message: `正在更新到 SyncHalo ${status.version ?? "新版"}…`,
+          message: `正在下载并验证 SyncHalo ${status.version ?? "新版"}…`,
           tone: "info",
         }, 60_000);
+      } else if (status.state === "installing") {
+        setUpdatePrompt(null);
+        pushToast({ message: "正在安装更新并准备重新启动…", tone: "info" }, 60_000);
       } else if (status.state === "installed") {
         pushToast({ message: "更新已安装，正在重新启动…", tone: "success" }, 10_000);
       } else if (status.state === "unsupported" || status.state === "busy") {
@@ -153,6 +162,16 @@ export default function App() {
     },
     [pushToast],
   );
+
+  const installUpdate = useCallback(async () => {
+    setUpdatePrompt(null);
+    try {
+      const status = await api.installUpdate();
+      if (!api.isTauri) presentUpdateStatus(status);
+    } catch (error) {
+      reportError(error);
+    }
+  }, [presentUpdateStatus, reportError]);
 
   const showNoSyncDevices = useCallback(() => {
     pushToast({ message: NO_SYNC_DEVICES_MESSAGE, tone: "warning" }, 6_000);
@@ -713,6 +732,11 @@ export default function App() {
       <main className="content-pane">{page}</main>
       <ToastRegion onDismiss={dismissToast} toasts={toasts} />
       <ConfirmDialog onClose={() => setConfirm(null)} state={confirm} />
+      <UpdateDialog
+        onClose={() => setUpdatePrompt(null)}
+        onInstall={() => void installUpdate()}
+        status={updatePrompt}
+      />
     </div>
   );
 }

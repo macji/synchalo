@@ -11,7 +11,10 @@ use tauri_plugin_dialog::DialogExt as _;
 use tauri_plugin_opener::OpenerExt as _;
 use uuid::Uuid;
 
-use crate::{UpdateCoordinator, UpdateStatus, check_for_updates_manually, runtime::AppRuntime};
+use crate::{
+    UpdateCoordinator, UpdateStatus, check_for_updates_manually, install_pending_update,
+    runtime::AppRuntime,
+};
 
 type CommandResult<T> = Result<T, UserFacingError>;
 
@@ -177,8 +180,22 @@ pub async fn update_settings(
 pub async fn check_for_updates(
     app: AppHandle,
     coordinator: State<'_, Arc<UpdateCoordinator>>,
+    runtime: State<'_, Arc<AppRuntime>>,
 ) -> CommandResult<UpdateStatus> {
-    Ok(check_for_updates_manually(app, coordinator.inner().clone()).await)
+    Ok(check_for_updates_manually(
+        app,
+        coordinator.inner().clone(),
+        runtime.settings().automatic_updates_enabled,
+    )
+    .await)
+}
+
+#[tauri::command]
+pub async fn install_update(
+    app: AppHandle,
+    coordinator: State<'_, Arc<UpdateCoordinator>>,
+) -> CommandResult<UpdateStatus> {
+    Ok(install_pending_update(app, coordinator.inner().clone()).await)
 }
 
 #[tauri::command]

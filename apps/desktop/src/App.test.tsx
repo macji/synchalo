@@ -1,12 +1,14 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import desktopPackage from "../package.json";
 import App from "./App";
+import { api } from "./api/client";
 
 describe("SyncHalo shell", () => {
   beforeEach(() => {
     cleanup();
+    vi.restoreAllMocks();
     window.localStorage.clear();
   });
 
@@ -66,6 +68,69 @@ describe("SyncHalo shell", () => {
     fireEvent.change(joinInput, { target: { value: "482913" } });
     fireEvent.click(screen.getByRole("button", { name: "加入设备" }));
     await waitFor(() => expect(joinDialog).not.toBeInTheDocument());
+  });
+
+  it("shows release notes and waits for confirmation when automatic updates are off", async () => {
+    const check = vi.spyOn(api, "checkForUpdates").mockResolvedValue({
+      state: "available",
+      version: "0.1.4",
+      notes: "- 改进更新提醒\n- 提升传输稳定性",
+      message: null,
+    });
+    const install = vi.spyOn(api, "installUpdate").mockResolvedValue({
+      state: "installed",
+      version: "0.1.4",
+      notes: null,
+      message: null,
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "粘贴板历史" });
+    fireEvent.click(screen.getByRole("button", { name: /设置/ }));
+    const automaticUpdate = screen.getByRole("switch", { name: "自动更新" });
+    if (automaticUpdate.getAttribute("aria-checked") === "true") fireEvent.click(automaticUpdate);
+    await waitFor(() => expect(automaticUpdate).not.toBeChecked());
+
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    const dialog = await screen.findByRole("dialog", { name: "发现新版本" });
+    expect(within(dialog).getByText("SyncHalo 0.1.4")).toBeInTheDocument();
+    expect(within(dialog).getByText(/改进更新提醒/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "立即更新" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    await waitFor(() => expect(dialog).not.toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    const reopened = await screen.findByRole("dialog", { name: "发现新版本" });
+    fireEvent.click(within(reopened).getByRole("button", { name: "立即更新" }));
+    await waitFor(() => expect(install).toHaveBeenCalledOnce());
+    expect(check).toHaveBeenCalledTimes(2);
+  });
+
+  it("asks to install and restart after an automatic download is ready", async () => {
+    vi.spyOn(api, "checkForUpdates").mockResolvedValue({
+      state: "ready",
+      version: "0.1.4",
+      notes: "更新已经下载并完成签名验证。",
+      message: null,
+    });
+    const install = vi.spyOn(api, "installUpdate").mockResolvedValue({
+      state: "installed",
+      version: "0.1.4",
+      notes: null,
+      message: null,
+    });
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "粘贴板历史" });
+    fireEvent.click(screen.getByRole("button", { name: /设置/ }));
+    const automaticUpdate = screen.getByRole("switch", { name: "自动更新" });
+    if (automaticUpdate.getAttribute("aria-checked") === "false") fireEvent.click(automaticUpdate);
+    await waitFor(() => expect(automaticUpdate).toBeChecked());
+    fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
+    const dialog = await screen.findByRole("dialog", { name: "更新已下载" });
+    expect(within(dialog).getByRole("button", { name: "稍后" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "安装并重启" }));
+    await waitFor(() => expect(install).toHaveBeenCalledOnce());
   });
 
   it("suppresses the browser context menu", () => {

@@ -156,8 +156,19 @@ export interface UserFacingError {
 }
 
 export interface UpdateStatusView {
-  state: "checking" | "upToDate" | "downloading" | "installed" | "error" | "unsupported" | "busy";
+  state:
+    | "checking"
+    | "upToDate"
+    | "available"
+    | "downloading"
+    | "ready"
+    | "installing"
+    | "installed"
+    | "error"
+    | "unsupported"
+    | "busy";
   version: string | null;
+  notes: string | null;
   message: string | null;
 }
 

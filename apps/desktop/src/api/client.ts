@@ -240,10 +240,30 @@ export const api = {
 
   async checkForUpdates(): Promise<UpdateStatusView> {
     if (isTauri) return command("check_for_updates");
+    const mockUpdate = new URLSearchParams(window.location.search).get("mockUpdate");
+    if (mockUpdate === "available" || mockUpdate === "ready") {
+      return {
+        state: mockUpdate,
+        version: "0.1.5",
+        notes: "- 更新提醒支持发布说明\n- 自动下载后由用户确认安装\n- 改进局域网同步稳定性",
+        message: null,
+      };
+    }
     return {
       state: "upToDate",
       version: desktopPackage.version,
+      notes: null,
       message: "当前已是最新版本。",
+    };
+  },
+
+  async installUpdate(): Promise<UpdateStatusView> {
+    if (isTauri) return command("install_update");
+    return {
+      state: "installed",
+      version: desktopPackage.version,
+      notes: null,
+      message: null,
     };
   },
 
