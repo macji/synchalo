@@ -562,7 +562,7 @@ fn notify_update_status(app: &AppHandle, status: &UpdateStatus) {
 fn supports_in_app_updates() -> bool {
     #[cfg(target_os = "linux")]
     {
-        std::env::var_os("APPIMAGE").is_some()
+        false
     }
     #[cfg(not(target_os = "linux"))]
     {

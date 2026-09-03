@@ -8,7 +8,7 @@ Manual workflow runs accept a source `ref` and a `target` choice. The ref can be
 
 | Platform             | Runner             | Assets                    |
 | -------------------- | ------------------ | ------------------------- |
-| Ubuntu Desktop ARM64 | `ubuntu-24.04-arm` | `.deb`, `.AppImage`       |
+| Ubuntu Desktop ARM64 | `ubuntu-24.04-arm` | `.deb`                    |
 | Windows x64          | `windows-latest`   | `.msi`, NSIS `-setup.exe` |
 | macOS ARM64          | Authorized Mac     | notarized `.app.zip`      |
 
@@ -68,7 +68,7 @@ Only the public APT key at `packaging/apt/synchalo-archive-keyring.asc` is commi
 
 ## macOS Local Release
 
-macOS is intentionally excluded from GitHub Actions. `scripts/release-macos.sh` uses the installed `Developer ID Application` identity, the `SyncHaloNotary` keychain profile, and the encrypted updater key at `~/.config/synchalo/updater-signing.key`. It verifies, staples, and stages the canonical local bundle before uploading versioned macOS assets and the three-platform `latest.json`. Apple credentials and certificates stay out of GitHub and Git history.
+macOS is intentionally excluded from GitHub Actions. `scripts/release-macos.sh` uses the installed `Developer ID Application` identity, the `SyncHaloNotary` keychain profile, and the encrypted updater key at `~/.config/synchalo/updater-signing.key`. It verifies, staples, and stages the canonical local bundle before uploading versioned macOS assets and the macOS/Windows `latest.json`. Ubuntu DEB updates remain under APT rather than the Tauri updater. Apple credentials and certificates stay out of GitHub and Git history.
 
 ## Create a Release
 
@@ -83,13 +83,13 @@ Keep these versions identical before tagging:
 Commit and push the version change, then validate without creating a tag:
 
 ```bash
-scripts/release.sh 0.1.5 --dry-run
+scripts/release.sh 0.1.6 --dry-run
 ```
 
 Trigger the release:
 
 ```bash
-scripts/release-all.sh 0.1.5
+scripts/release-all.sh 0.1.6
 ```
 
 For a faster non-publishing platform build, open **Actions → Publish Linux and Windows Release → Run workflow**, set `ref` to `main` (or another branch, tag, or commit), then choose `linux`, `windows`, or `validate-only`. Choose `all` only with a matching version tag when the manual run should create or update the complete GitHub Release.
@@ -98,6 +98,6 @@ The scripts require a clean `main` branch that exactly matches `origin/main`. `r
 
 ## Automatic Updates
 
-The public repository exposes `https://github.com/macji/synchalo/releases/latest/download/latest.json`. Production builds check this manifest about five seconds after startup and every 30 minutes afterward, and Settings provides a manual check. When automatic updates are disabled, the app shows the version and release notes before downloading; users can install or persistently ignore that exact version, and a later version restores reminders. When enabled, it downloads and verifies into a private temporary file, then waits for explicit “Install and restart” confirmation. Concurrent operations are collapsed into one, and cached bytes are digest-checked again before installation. macOS and Windows restart after confirmation; Linux in-app installation is available only for AppImage launches. DEB installations update through the signed APT source or manual package installation. Windows updater signatures are regenerated after SignPath because Authenticode changes the installer bytes.
+The public repository exposes `https://github.com/macji/synchalo/releases/latest/download/latest.json` for macOS and Windows. Production builds on those platforms check this manifest about five seconds after startup and every 30 minutes afterward, and Settings provides a manual check. When automatic updates are disabled, the app shows the version and release notes before downloading; users can install or persistently ignore that exact version, and a later version restores reminders. When enabled, it downloads and verifies into a private temporary file, then waits for explicit “Install and restart” confirmation. Concurrent operations are collapsed into one, and cached bytes are digest-checked again before installation. Ubuntu ships only as DEB and updates through the signed APT source or manual package installation. Windows updater signatures are regenerated after SignPath because Authenticode changes the installer bytes.
 
 References: [GitHub Releases access](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases), [Tauri GitHub pipeline](https://v2.tauri.app/distribute/pipelines/github/).

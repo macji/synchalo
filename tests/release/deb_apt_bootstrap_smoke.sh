@@ -10,6 +10,7 @@ done
 
 project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 tauri_config="$project_root/apps/desktop/src-tauri/tauri.conf.json"
+linux_config="$project_root/apps/desktop/src-tauri/tauri.linux.conf.json"
 source_file="$project_root/packaging/deb/synchalo.sources"
 key_file="$project_root/packaging/apt/synchalo-archive-keyring.asc"
 postinst_file="$project_root/packaging/deb/postinst"
@@ -33,6 +34,9 @@ jq -e \
     and .bundle.linux.deb.files["/usr/share/keyrings/synchalo-archive-keyring.asc"] == $key_path
     and .bundle.linux.deb.postInstallScript == $postinst_path' \
   "$tauri_config" >/dev/null
+jq -e \
+  '.bundle.createUpdaterArtifacts == false and .bundle.targets == ["deb"]' \
+  "$linux_config" >/dev/null
 
 legacy_root="$test_root/legacy-root"
 mkdir -p "$legacy_root/etc/apt/sources.list.d"

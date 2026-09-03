@@ -79,7 +79,7 @@ jobs:
           - name: Ubuntu ARM64
             os: ubuntu-24.04-arm
             rust_target: aarch64-unknown-linux-gnu
-            tauri_args: --target aarch64-unknown-linux-gnu --bundles deb,appimage
+            tauri_args: --target aarch64-unknown-linux-gnu --bundles deb
             artifact_name: synchalo-ubuntu-arm64
             cache_key: ubuntu-arm64
 
@@ -94,7 +94,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            file \
             libappindicator3-dev \
             librsvg2-dev \
             libssl-dev \
@@ -142,5 +141,4 @@ jobs:
             target/**/release/bundle/**/*.app
             target/**/release/bundle/**/*.dmg
             target/**/release/bundle/**/*.deb
-            target/**/release/bundle/**/*.AppImage
           if-no-files-found: error

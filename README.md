@@ -14,8 +14,8 @@ SyncHalo 是一款本地优先的局域网剪贴板与文件同步工具。它�
 - 提供剪贴板历史、文件历史、搜索、收藏、再次同步和后端分页。
 - 删除同步与收藏同步可独立开启，默认关闭。
 - 支持托盘驻留、暂停同步、开机启动、自定义接收目录和设备管理。
-- 启动约 5 秒后检查更新，之后每 30 分钟检查一次，也可手动检查。
-- 关闭自动更新时显示新版说明，由用户选择立即更新或忽略该版本；开启后后台下载并验签，安装前仍会请求确认。
+- macOS 和 Windows 启动约 5 秒后检查更新，之后每 30 分钟检查一次，也可手动检查。
+- macOS 和 Windows 关闭自动更新时显示新版说明，由用户选择立即更新或忽略该版本；开启后后台下载并验签，安装前仍会请求确认。Ubuntu 由签名 APT 源更新。
 
 ## 安全与隐私
 
@@ -33,7 +33,7 @@ SyncHalo 是一款本地优先的局域网剪贴板与文件同步工具。它�
 | 平台 | 架构 | 安装包 | 更新方式 |
 | --- | --- | --- | --- |
 | macOS 13+ | Apple Silicon（ARM64） | ZIP 中的 `.app` | 应用内签名更新 |
-| Ubuntu 24.04 | ARM64 | `.deb`、`.AppImage` | APT 系统更新或 AppImage 应用内更新 |
+| Ubuntu 24.04 | ARM64 | `.deb` | 签名 APT 系统更新 |
 | Windows 10/11 | x64 | NSIS `.exe`、`.msi` | 应用内签名更新 |
 
 请先在 [GitHub Releases](https://github.com/macji/synchalo/releases/latest) 下载当前平台的最新版。
@@ -86,27 +86,6 @@ sudo apt install sync-halo
 ```
 
 首次单独安装下载的 DEB 时，图形安装器仍可能把它标记为未知来源；配置完成后，后续 APT 仓库元数据和软件包摘要均由 SyncHalo APT 密钥认证。
-
-### Ubuntu：AppImage
-
-AppImage 无需安装，并支持应用内更新：
-
-```bash
-mkdir -p ~/Applications
-mv ~/Downloads/SyncHalo_*_linux-arm64.AppImage ~/Applications/
-chmod +x ~/Applications/SyncHalo_*_linux-arm64.AppImage
-~/Applications/SyncHalo_*_linux-arm64.AppImage
-```
-
-Ubuntu 24.04 如果提示缺少 `libfuse.so.2`：
-
-```bash
-sudo add-apt-repository universe
-sudo apt update
-sudo apt install libfuse2t64
-```
-
-不要安装旧的 `fuse` 包。为了让应用内更新能够替换原文件，应把 AppImage 放在当前用户可写目录。
 
 ### Windows
 
@@ -188,7 +167,6 @@ APPLE_SIGNING_IDENTITY=- npm run tauri -- build \
 ```bash
 sudo apt update
 sudo apt install -y \
-  file \
   libappindicator3-dev \
   librsvg2-dev \
   libssl-dev \
@@ -200,14 +178,8 @@ rustup target add aarch64-unknown-linux-gnu
 npm ci
 npm run tauri -- build \
   --target aarch64-unknown-linux-gnu \
-  --bundles deb,appimage \
+  --bundles deb \
   --config '{"bundle":{"createUpdaterArtifacts":false}}'
-```
-
-仓库还提供完整的原生构建脚本：
-
-```bash
-bash release/ubuntu-24.04-arm64/build-on-ubuntu.sh
 ```
 
 ### Windows x64 源码构建

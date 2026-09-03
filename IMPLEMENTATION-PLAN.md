@@ -7,6 +7,12 @@
 | 桌面架构 | Tauri 2 + React/TypeScript/Vite + Rust |
 | 当前阶段 | M4：双平台验证与发布硬化 |
 
+## v0.1.6 发布计划
+
+1. Ubuntu ARM64 仅发布 DEB，所有默认、CI、手动和正式发布构建均停止生成 AppImage。
+2. DEB 内置公开 APT 公钥和软件源配置，首次安装后由 Ubuntu 系统更新器或 APT 获取后续版本。
+3. 自动校验 DEB 中的源、公钥指纹和旧配置迁移脚本，更新开源 README 后完成三平台 `v0.1.6` 正式发布。
+
 ## v0.1.5 发布计划
 
 1. 在同步文件和设置页的“我的设备”标题右侧加入统一刷新按钮，触发 Rust 重启 mDNS 发布/浏览并恢复可信设备连接。
@@ -72,7 +78,7 @@
 
 - 托盘、开机启动、通知、权限与 Wayland 能力提示。
 - CSP/capabilities、日志脱敏、性能预算和安装包。
-- macOS 签名/notarize 与 Ubuntu ARM64 deb/AppImage。
+- macOS 签名/notarize 与 Ubuntu ARM64 DEB。
 
 ## 3. 当前完成度
 

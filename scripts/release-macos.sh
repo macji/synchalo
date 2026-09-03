@@ -305,14 +305,11 @@ gh release upload "$tag" \
   --repo "$github_repository" \
   --clobber
 
-linux_signature_name="SyncHalo_${version}_linux-arm64.AppImage.sig"
 windows_signature_name="SyncHalo_${version}_windows-x64-setup.exe.sig"
 gh release download "$tag" \
   --repo "$github_repository" \
-  --pattern "$linux_signature_name" \
   --pattern "$windows_signature_name" \
   --dir "$signature_dir"
-linux_signature="$(tr -d '\r\n' < "$signature_dir/$linux_signature_name")"
 windows_signature="$(tr -d '\r\n' < "$signature_dir/$windows_signature_name")"
 mac_signature="$(tr -d '\r\n' < "$upload_dir/$mac_signature_name")"
 published_at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -322,8 +319,6 @@ jq -n \
   --arg version "$version" \
   --arg notes "$release_notes" \
   --arg pub_date "$published_at" \
-  --arg linux_url "$release_base_url/SyncHalo_${version}_linux-arm64.AppImage" \
-  --arg linux_signature "$linux_signature" \
   --arg windows_url "$release_base_url/SyncHalo_${version}_windows-x64-setup.exe" \
   --arg windows_signature "$windows_signature" \
   --arg mac_url "$release_base_url/$mac_update_name" \
@@ -333,7 +328,6 @@ jq -n \
     notes: $notes,
     pub_date: $pub_date,
     platforms: {
-      "linux-aarch64": {url: $linux_url, signature: $linux_signature},
       "windows-x86_64": {url: $windows_url, signature: $windows_signature},
       "darwin-aarch64": {url: $mac_url, signature: $mac_signature}
     }
@@ -372,7 +366,7 @@ for local_asset in \
   fi
 done
 curl -fsSL "https://github.com/$github_repository/releases/latest/download/latest.json" \
-  | jq -e --arg version "$version" '.version == $version and (.platforms | length == 3)' \
+  | jq -e --arg version "$version" '.version == $version and (.platforms | length == 2)' \
   >/dev/null
 
 echo "macOS release uploaded and verified: https://github.com/$github_repository/releases/tag/$tag"
