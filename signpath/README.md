@@ -42,5 +42,7 @@ Authenticode publisher. Because Authenticode changes the installer bytes, the
 workflow regenerates the Tauri updater signatures only after SignPath returns.
 
 Manual `windows` workflow runs remain unsigned Actions artifacts. An `all`
-run, including every pushed `v*` tag, fails closed if SignPath is unavailable
-or returns an unexpected publisher.
+run uses the repository variable `WINDOWS_SIGNING_MODE`. Keep it at `unsigned`
+only while the Foundation application is pending. After approval, set it to
+`signpath`; formal releases then fail closed if SignPath is unavailable or
+returns an unexpected publisher.

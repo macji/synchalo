@@ -12,7 +12,10 @@ The repository is public and licensed under `MIT OR Apache-2.0`.
 2. Frontend tests, Rust tests, lint, formatting, Clippy, and native package
    checks must pass on GitHub-hosted runners before publication.
 3. Windows MSI and NSIS installers are built from the tagged commit by GitHub
-   Actions and submitted as GitHub workflow artifacts to SignPath.
+   Actions. The release workflow uses the explicitly configured
+   `WINDOWS_SIGNING_MODE`: `signpath` submits them to SignPath, while the
+   temporary `unsigned` mode is permitted only while the OSS application is
+   under review and must be disclosed in release notes.
 4. Every SignPath Foundation signing request requires manual approval by a
    project maintainer with two-factor authentication enabled.
 5. The workflow accepts the result only when both installers have valid

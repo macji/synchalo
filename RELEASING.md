@@ -12,7 +12,7 @@ Manual workflow runs accept a source `ref` and a `target` choice. The ref can be
 | Windows x64          | `windows-latest`   | `.msi`, NSIS `-setup.exe` |
 | macOS ARM64          | Authorized Mac     | notarized `.app.zip`      |
 
-Formal Windows packages are signed by SignPath Foundation. The release fails instead of publishing unsigned Windows installers. Manual `windows` builds remain unsigned short-lived Actions artifacts and never update a GitHub Release.
+The repository variable `WINDOWS_SIGNING_MODE` makes Windows release intent explicit. Set it to `signpath` for SignPath Foundation Authenticode signing, or temporarily to `unsigned` while the OSS application is under review. Unsigned release notes always disclose the warning. Manual `windows` builds remain unsigned short-lived Actions artifacts and never update a GitHub Release.
 
 Ubuntu repository metadata is signed by the dedicated SyncHalo APT key. The private key is stored only as an encrypted local backup and GitHub Actions secrets; GitHub Pages contains the public key, signed metadata, and the current ARM64 DEB. A downloaded standalone DEB can still be described as an unknown source by a graphical installer, while installation through the configured APT source verifies repository origin and integrity.
 
@@ -31,6 +31,18 @@ SignPath Foundation requires:
 - `SIGNPATH_ORGANIZATION_ID`: SignPath organization ID.
 
 The SignPath project, policy, and artifact configuration slugs are fixed by the workflow as `synchalo`, `release-signing`, and `windows-installers`. Complete the one-time setup in [`signpath/README.md`](signpath/README.md). Every formal request requires manual approval in SignPath.
+
+While SignPath review is pending, explicitly select the temporary mode:
+
+```bash
+gh variable set WINDOWS_SIGNING_MODE --repo macji/synchalo --body unsigned
+```
+
+After approval and secret configuration, enable signing without changing the workflow:
+
+```bash
+gh variable set WINDOWS_SIGNING_MODE --repo macji/synchalo --body signpath
+```
 
 The signed APT repository requires:
 
@@ -86,6 +98,6 @@ The scripts require a clean `main` branch that exactly matches `origin/main`. `r
 
 ## Automatic Updates
 
-The public repository exposes `https://github.com/macji/synchalo/releases/latest/download/latest.json`. Production builds check this manifest five seconds after startup. Updates are verified with the embedded public updater key before installation; macOS and Windows restart automatically, while Linux automatic installation is enabled only for AppImage launches. DEB installations update through the signed APT source or manual package installation. Windows updater signatures are regenerated after SignPath because Authenticode changes the installer bytes.
+The public repository exposes `https://github.com/macji/synchalo/releases/latest/download/latest.json`. Production builds check this manifest about five seconds after startup and every 30 minutes afterward while automatic updates are enabled. Settings also provides a manual check that works when automatic polling is disabled. Concurrent checks are collapsed into one operation. Updates are verified with the embedded public updater key before installation; macOS and Windows restart automatically, while Linux automatic installation is enabled only for AppImage launches. DEB installations update through the signed APT source or manual package installation. Windows updater signatures are regenerated after SignPath because Authenticode changes the installer bytes.
 
 References: [GitHub Releases access](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases), [Tauri GitHub pipeline](https://v2.tauri.app/distribute/pipelines/github/).

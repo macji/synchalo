@@ -132,6 +132,7 @@ jobs:
       SIGNPATH_ORGANIZATION_ID: ${{ secrets.SIGNPATH_ORGANIZATION_ID }}
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+      WINDOWS_SIGNING_MODE: ${{ vars.WINDOWS_SIGNING_MODE }}
     steps:
       - name: Require credentials for a complete release
         if: needs.metadata.outputs.target == 'all'
@@ -142,11 +143,21 @@ jobs:
             APT_GPG_FINGERPRINT
             APT_GPG_PASSPHRASE
             APT_GPG_PRIVATE_KEY
-            SIGNPATH_API_TOKEN
-            SIGNPATH_ORGANIZATION_ID
             TAURI_SIGNING_PRIVATE_KEY
             TAURI_SIGNING_PRIVATE_KEY_PASSWORD
           )
+          case "$WINDOWS_SIGNING_MODE" in
+            signpath)
+              required+=(SIGNPATH_API_TOKEN SIGNPATH_ORGANIZATION_ID)
+              ;;
+            unsigned)
+              echo "::warning::Windows installers will be unsigned while SignPath approval is pending."
+              ;;
+            *)
+              echo "WINDOWS_SIGNING_MODE must be explicitly set to signpath or unsigned." >&2
+              exit 1
+              ;;
+          esac
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then
               echo "Missing required release credential: $name" >&2
@@ -356,7 +367,7 @@ jobs:
 
       - id: upload-unsigned-windows
         name: Upload unsigned installers for SignPath
-        if: needs.metadata.outputs.target == 'all'
+        if: needs.metadata.outputs.target == 'all' && vars.WINDOWS_SIGNING_MODE == 'signpath'
         uses: actions/upload-artifact@v7
         with:
           name: signpath-input-windows-x64
@@ -365,7 +376,7 @@ jobs:
           retention-days: 1
 
       - name: Sign installers with SignPath Foundation
-        if: needs.metadata.outputs.target == 'all'
+        if: needs.metadata.outputs.target == 'all' && vars.WINDOWS_SIGNING_MODE == 'signpath'
         uses: signpath/github-action-submit-signing-request@v2
         with:
           api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
@@ -382,7 +393,7 @@ jobs:
             version: ${{ toJSON(needs.metadata.outputs.version) }}
 
       - name: Verify SignPath signatures and refresh updater signatures
-        if: needs.metadata.outputs.target == 'all'
+        if: needs.metadata.outputs.target == 'all' && vars.WINDOWS_SIGNING_MODE == 'signpath'
         shell: pwsh
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -417,11 +428,12 @@ jobs:
         name: Record Windows signing status
         shell: pwsh
         run: |
-          if ("${{ needs.metadata.outputs.target }}" -eq "all") {
+          $isSignPathRelease = "${{ needs.metadata.outputs.target }}" -eq "all" -and "${{ vars.WINDOWS_SIGNING_MODE }}" -eq "signpath"
+          if ($isSignPathRelease) {
             "enabled=true" >> $env:GITHUB_OUTPUT
           } else {
             "enabled=false" >> $env:GITHUB_OUTPUT
-            Write-Warning "Manual Windows artifacts are unsigned; formal releases require SignPath."
+            Write-Warning "Windows artifacts are unsigned."
           }
 
       - uses: actions/upload-artifact@v7
@@ -528,9 +540,10 @@ jobs:
             > SHA256SUMS.txt
           cd ..
 
-          if [[ "$WINDOWS_SIGNED" != "true" ]]; then
-            echo "Formal releases must contain SignPath-signed Windows installers." >&2
-            exit 1
+          if [[ "$WINDOWS_SIGNED" == "true" ]]; then
+            windows_status="SignPath Foundation Authenticode signed"
+          else
+            windows_status="unsigned while SignPath approval is pending; Windows may display an Unknown publisher or SmartScreen warning"
           fi
           cat > release-notes.md <<EOF
           SyncHalo ${RELEASE_VERSION}
@@ -538,7 +551,7 @@ jobs:
           Platform packages:
 
           - Ubuntu Desktop ARM64: DEB, AppImage, and signed APT repository
-          - Windows x64: SignPath Foundation Authenticode-signed MSI and NSIS setup executable
+          - Windows x64: MSI and NSIS setup executable (${windows_status})
 
           Signed updater artifacts are included for AppImage and Windows installations.
 
