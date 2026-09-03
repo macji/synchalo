@@ -48,6 +48,11 @@ struct PreparedUpdate {
     digest: blake3::Hash,
 }
 
+struct PrepareUpdateError {
+    update: Box<Update>,
+    message: String,
+}
+
 struct UpdatePermit {
     coordinator: Arc<UpdateCoordinator>,
 }
@@ -313,8 +318,10 @@ async fn download_update(
             }
             emit_update_status(app, status)
         }
-        Err((update, error)) => {
-            tracing::warn!(%error, version = %update.version, "update download failed");
+        Err(error) => {
+            let PrepareUpdateError { update, message } = error;
+            let update = *update;
+            tracing::warn!(error = %message, version = %update.version, "update download failed");
             let status = UpdateStatus::from_update("error", &update)
                 .with_message("更新下载或验签失败，请稍后重试。");
             coordinator
@@ -327,10 +334,10 @@ async fn download_update(
     }
 }
 
-async fn prepare_update(update: Update) -> Result<PreparedUpdate, (Update, String)> {
+async fn prepare_update(update: Update) -> Result<PreparedUpdate, PrepareUpdateError> {
     let bytes = match update.download(|_, _| {}, || {}).await {
         Ok(bytes) => bytes,
-        Err(error) => return Err((update, error.to_string())),
+        Err(error) => return Err(PrepareUpdateError::new(update, error.to_string())),
     };
     let digest = blake3::hash(&bytes);
     let package = match tempfile::Builder::new()
@@ -338,18 +345,18 @@ async fn prepare_update(update: Update) -> Result<PreparedUpdate, (Update, Strin
         .tempfile()
     {
         Ok(package) => package,
-        Err(error) => return Err((update, error.to_string())),
+        Err(error) => return Err(PrepareUpdateError::new(update, error.to_string())),
     };
     let file = match package.reopen() {
         Ok(file) => file,
-        Err(error) => return Err((update, error.to_string())),
+        Err(error) => return Err(PrepareUpdateError::new(update, error.to_string())),
     };
     let mut file = tokio::fs::File::from_std(file);
     if let Err(error) = file.write_all(&bytes).await {
-        return Err((update, error.to_string()));
+        return Err(PrepareUpdateError::new(update, error.to_string()));
     }
     if let Err(error) = file.sync_all().await {
-        return Err((update, error.to_string()));
+        return Err(PrepareUpdateError::new(update, error.to_string()));
     }
     drop(bytes);
     Ok(PreparedUpdate {
@@ -393,8 +400,10 @@ pub(crate) async fn install_pending_update(
             emit_update_status(&app, UpdateStatus::from_update("downloading", &update));
             match prepare_update(update).await {
                 Ok(prepared) => prepared,
-                Err((update, error)) => {
-                    tracing::warn!(%error, version = %update.version, "update download failed");
+                Err(error) => {
+                    let PrepareUpdateError { update, message } = error;
+                    let update = *update;
+                    tracing::warn!(error = %message, version = %update.version, "update download failed");
                     let status = UpdateStatus::from_update("error", &update)
                         .with_message("更新下载或验签失败，请稍后重试。");
                     coordinator
@@ -529,6 +538,15 @@ impl UpdateStatus {
     fn with_message(mut self, message: &str) -> Self {
         self.message = Some(message.to_owned());
         self
+    }
+}
+
+impl PrepareUpdateError {
+    fn new(update: Update, message: String) -> Self {
+        Self {
+            update: Box::new(update),
+            message,
+        }
     }
 }
 
