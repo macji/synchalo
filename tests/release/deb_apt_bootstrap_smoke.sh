@@ -95,16 +95,20 @@ if [[ $# -eq 1 ]]; then
     exit 1
   fi
 
-  packaged_source="$(dpkg-deb --fsys-tarfile "$deb_package" | tar -xOf - ./etc/apt/sources.list.d/synchalo.sources)"
+  package_root="$test_root/package-root"
+  control_root="$test_root/control-root"
+  mkdir -p "$package_root" "$control_root"
+  dpkg-deb --extract "$deb_package" "$package_root"
+  dpkg-deb --control "$deb_package" "$control_root"
+
+  packaged_source="$(cat "$package_root/etc/apt/sources.list.d/synchalo.sources")"
   if [[ "$packaged_source" != "$expected_source" ]]; then
     echo "Built DEB does not contain the expected APT source." >&2
     exit 1
   fi
 
   packaged_key="$test_root/synchalo-archive-keyring.asc"
-  dpkg-deb --fsys-tarfile "$deb_package" \
-    | tar -xOf - ./usr/share/keyrings/synchalo-archive-keyring.asc \
-    > "$packaged_key"
+  cp "$package_root/usr/share/keyrings/synchalo-archive-keyring.asc" "$packaged_key"
   packaged_key_fingerprint="$(
     gpg --batch --with-colons --show-keys "$packaged_key" 2>/dev/null \
       | awk -F: '$1 == "fpr" { print toupper($10); exit }'
@@ -114,9 +118,7 @@ if [[ $# -eq 1 ]]; then
     exit 1
   fi
 
-  packaged_postinst="$test_root/postinst"
-  dpkg-deb --ctrl-tarfile "$deb_package" | tar -xOf - ./postinst > "$packaged_postinst"
-  if ! cmp -s "$postinst_file" "$packaged_postinst"; then
+  if ! cmp -s "$postinst_file" "$control_root/postinst"; then
     echo "Built DEB does not contain the expected post-install migration." >&2
     exit 1
   fi
