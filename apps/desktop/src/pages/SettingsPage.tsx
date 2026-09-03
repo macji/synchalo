@@ -198,6 +198,13 @@ export function SettingsPage({
               onChange={(value) => onUpdate({ keepInTray: value })}
             />
           </SettingRow>
+          <SettingRow description="发现新版本后自动下载、验证、安装并重新启动。" label="自动更新">
+            <Switch
+              checked={settings.automaticUpdatesEnabled}
+              label="自动更新"
+              onChange={(value) => onUpdate({ automaticUpdatesEnabled: value })}
+            />
+          </SettingRow>
         </SettingsSection>
 
         <SettingsSection title="当前设备">

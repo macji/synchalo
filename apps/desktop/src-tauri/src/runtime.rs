@@ -135,6 +135,7 @@ impl AppRuntime {
             launch_at_startup: false,
             keep_in_tray: true,
             notifications_enabled: true,
+            automatic_updates_enabled: true,
         };
         let mut settings = database.load_settings(defaults)?;
         if enforce_notifications_enabled(&mut settings) {
@@ -627,6 +628,9 @@ impl AppRuntime {
         }
         if let Some(enabled) = patch.keep_in_tray {
             settings.keep_in_tray = enabled;
+        }
+        if let Some(enabled) = patch.automatic_updates_enabled {
+            settings.automatic_updates_enabled = enabled;
         }
         enforce_notifications_enabled(&mut settings);
         self.database.save_settings(&settings)?;
@@ -1915,6 +1919,7 @@ mod tests {
             launch_at_startup: false,
             keep_in_tray: true,
             notifications_enabled: false,
+            automatic_updates_enabled: true,
         };
         assert!(enforce_notifications_enabled(&mut settings));
         assert!(settings.notifications_enabled);
@@ -1932,6 +1937,7 @@ mod tests {
             launch_at_startup: false,
             keep_in_tray: true,
             notifications_enabled: true,
+            automatic_updates_enabled: true,
         };
         let delete = HistoryMutation::Delete {
             item_kind: HistoryItemKind::Clipboard,

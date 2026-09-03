@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "SyncHalo",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "identifier": "io.synchalo.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -39,6 +39,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -60,6 +61,17 @@
           "libwebkit2gtk-4.1-0",
           "libgtk-3-0"
         ]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDRGNjVDQ0FBMzUxMkY2NUYKUldSZjloSTFxc3hsVHg5MC9JTkVEWTloWWU3SlF4c1lwMm9LRldKMUpzVm5HOXlhMkhqU1M4VWwK",
+      "endpoints": [
+        "https://github.com/macji/synchalo/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

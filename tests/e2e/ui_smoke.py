@@ -147,6 +147,7 @@ def main() -> None:
         assert page.get_by_text(re.compile(r"Protocol v1", re.IGNORECASE)).count() == 0
         assert not page.get_by_role("switch", name="删除同步").is_checked()
         assert not page.get_by_role("switch", name="收藏同步").is_checked()
+        assert page.get_by_role("switch", name="自动更新").is_checked()
         assert page.get_by_text(f"SyncHalo {APP_VERSION}", exact=True).is_visible()
         page.get_by_text("482 913").wait_for()
         assert page.locator(".section-intro p").count() == 0

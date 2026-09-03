@@ -16,11 +16,12 @@ SyncHalo 是一个本地优先的局域网粘贴板与文件同步工具。桌�
 - 文件流传输、连续 offset 续传、BLAKE3 校验、临时文件和原子提交。
 - 同步文件页采用设备、发送、历史三分区，支持同步码、页面内 `Ctrl/Cmd + V` 自动同步、历史再次同步、持久化收藏和每页 100 条后端分页。
 - Tauri 状态栏/托盘图标、点击激活窗口、开机启动设置和系统文件选择器。
+- 生产包启动后自动检查、验签、下载并安装更新；可在设置中关闭，Linux 自动更新仅支持 AppImage。
 - macOS ARM64 与 Ubuntu ARM64 原生 CI 构建。
 
 ## 发布产物
 
-Linux 和 Windows 安装包由 GitHub Actions 构建并上传到 GitHub Releases。macOS 正式包在授权 Mac 上本地签名与公证，生成到被 Git 忽略的 `release/macos-arm64/`。
+Linux 和 Windows 安装包由 GitHub Actions 构建并上传到 GitHub Releases。macOS 正式包在授权 Mac 上本地签名、公证，并由本机脚本上传到同一个 Release；Apple 签名材料不会进入 GitHub Actions。
 
 本地已生成 macOS Apple Silicon 产物时，可以运行：
 
@@ -119,4 +120,4 @@ macOS 不能直接链接 Ubuntu 的 WebKitGTK、GTK 和 AppIndicator 运行库�
 
 ## 自动发布
 
-版本 Tag 会通过 GitHub Actions 构建 Ubuntu Desktop ARM64 和 Windows x64，并发布到 GitHub Releases。macOS 继续在授权 Mac 上进行 Developer ID 签名和 Apple 公证。产物列表、可选 Windows 签名和发版命令见 [RELEASING.md](RELEASING.md)。
+版本 Tag 会通过 GitHub Actions 构建 Ubuntu Desktop ARM64 和 Windows x64；本机同时完成 macOS Developer ID 签名和 Apple 公证，再将三平台产物及 `latest.json` 汇总到同一 GitHub Release。完整发版使用 `scripts/release-all.sh <version>`，细节见 [RELEASING.md](RELEASING.md)。

@@ -74,9 +74,18 @@ jobs:
           tauri_version="$(jq -r '.version' apps/desktop/src-tauri/tauri.conf.json)"
           root_npm_version="$(jq -r '.version' package.json)"
           desktop_npm_version="$(jq -r '.version' apps/desktop/package.json)"
+          lock_version="$(jq -r '.version' package-lock.json)"
+          lock_root_version="$(jq -r '.packages[""] | .version' package-lock.json)"
+          lock_desktop_version="$(jq -r '.packages["apps/desktop"] | .version' package-lock.json)"
           cargo_version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\([^"]*\)"/\1/p' Cargo.toml)"
 
-          for version in "$root_npm_version" "$desktop_npm_version" "$cargo_version"; do
+          for version in \
+            "$root_npm_version" \
+            "$desktop_npm_version" \
+            "$lock_version" \
+            "$lock_root_version" \
+            "$lock_desktop_version" \
+            "$cargo_version"; do
             if [[ "$version" != "$tauri_version" ]]; then
               echo "Project version mismatch: expected $tauri_version, found $version" >&2
               exit 1
@@ -195,6 +204,9 @@ jobs:
       - run: npm ci
 
       - name: Build Ubuntu bundles
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: >-
           npm run tauri -- build
           --target aarch64-unknown-linux-gnu
@@ -207,8 +219,10 @@ jobs:
           bundle_root="target/aarch64-unknown-linux-gnu/release/bundle"
           deb="$(find "$bundle_root/deb" -maxdepth 1 -type f -name '*.deb' -print -quit)"
           appimage="$(find "$bundle_root/appimage" -maxdepth 1 -type f -name '*.AppImage' -print -quit)"
+          appimage_signature="${appimage}.sig"
           test -n "$deb"
           test -n "$appimage"
+          test -s "$appimage_signature"
 
           dpkg-deb --info "$deb" >/dev/null
           file "$appimage" | grep -q 'ELF.*ARM aarch64'
@@ -218,6 +232,8 @@ jobs:
             "release-assets/SyncHalo_${RELEASE_VERSION}_ubuntu-arm64.deb"
           install -m 0755 "$appimage" \
             "release-assets/SyncHalo_${RELEASE_VERSION}_linux-arm64.AppImage"
+          install -m 0644 "$appimage_signature" \
+            "release-assets/SyncHalo_${RELEASE_VERSION}_linux-arm64.AppImage.sig"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -311,6 +327,9 @@ jobs:
 
       - name: Build Windows installers
         shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           $arguments = @(
             "run", "tauri", "--", "build",
@@ -339,8 +358,15 @@ jobs:
           $version = $env:RELEASE_VERSION
           $msiOutput = "release-assets/SyncHalo_${version}_windows-x64.msi"
           $exeOutput = "release-assets/SyncHalo_${version}_windows-x64-setup.exe"
+          $msiSignature = "$($msi.FullName).sig"
+          $exeSignature = "$($exe.FullName).sig"
+          if (-not (Test-Path $msiSignature) -or -not (Test-Path $exeSignature)) {
+            throw "Expected updater signatures were not produced."
+          }
           Copy-Item $msi.FullName $msiOutput
           Copy-Item $exe.FullName $exeOutput
+          Copy-Item $msiSignature "$msiOutput.sig"
+          Copy-Item $exeSignature "$exeOutput.sig"
 
           if ("${{ steps.signing.outputs.enabled }}" -eq "true") {
             foreach ($path in @($msiOutput, $exeOutput)) {
@@ -408,6 +434,8 @@ jobs:
 
           - Ubuntu Desktop ARM64: DEB and AppImage
           - Windows x64: MSI and NSIS setup executable (${windows_status})
+
+          Signed updater artifacts are included for AppImage and Windows installations.
 
           Verify downloads with \`SHA256SUMS.txt\`.
           EOF

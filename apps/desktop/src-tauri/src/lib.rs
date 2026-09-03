@@ -8,9 +8,21 @@ use std::sync::{
 };
 
 use runtime::AppRuntime;
-use tauri::{Manager, webview::PageLoadEvent};
+use serde::Serialize;
+use tauri::{AppHandle, Emitter, Manager, webview::PageLoadEvent};
 #[cfg(target_os = "macos")]
 use tauri_plugin_autostart::MacosLauncher;
+use tauri_plugin_updater::UpdaterExt as _;
+
+const EVENT_UPDATE_STATUS: &str = "synchalo://update-status";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateStatus {
+    state: &'static str,
+    version: Option<String>,
+    message: Option<String>,
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -32,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(autostart.build())
         .on_page_load(move |webview, payload| {
             if webview.label() == "main"
@@ -46,6 +59,7 @@ pub fn run() {
                 tauri::async_runtime::block_on(AppRuntime::initialize(app.handle().clone()))?;
             app.manage::<Arc<AppRuntime>>(runtime.clone());
             tray::install(app.handle(), runtime.clone())?;
+            start_automatic_update(app.handle().clone(), runtime.clone());
 
             if let Some(window) = app.get_webview_window("main") {
                 let close_runtime = runtime;
@@ -97,4 +111,68 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run SyncHalo");
+}
+
+fn start_automatic_update(app: AppHandle, runtime: Arc<AppRuntime>) {
+    if cfg!(debug_assertions) {
+        return;
+    }
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("APPIMAGE").is_none() {
+        return;
+    }
+
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        if !runtime.settings().automatic_updates_enabled {
+            return;
+        }
+        let update = match app.updater() {
+            Ok(updater) => match updater.check().await {
+                Ok(update) => update,
+                Err(error) => {
+                    tracing::debug!(%error, "automatic update check failed");
+                    return;
+                }
+            },
+            Err(error) => {
+                tracing::debug!(%error, "automatic updater is unavailable");
+                return;
+            }
+        };
+        let Some(update) = update else {
+            return;
+        };
+        let version = update.version.to_string();
+        let _ = app.emit(
+            EVENT_UPDATE_STATUS,
+            UpdateStatus {
+                state: "downloading",
+                version: Some(version.clone()),
+                message: None,
+            },
+        );
+        if let Err(error) = update.download_and_install(|_, _| {}, || {}).await {
+            tracing::warn!(%error, %version, "automatic update failed");
+            let _ = app.emit(
+                EVENT_UPDATE_STATUS,
+                UpdateStatus {
+                    state: "error",
+                    version: Some(version),
+                    message: Some("自动更新失败，请稍后重试或手动下载新版。".to_owned()),
+                },
+            );
+            return;
+        }
+        let _ = app.emit(
+            EVENT_UPDATE_STATUS,
+            UpdateStatus {
+                state: "installed",
+                version: Some(version),
+                message: None,
+            },
+        );
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        app.restart();
+    });
 }

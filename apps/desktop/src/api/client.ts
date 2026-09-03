@@ -21,6 +21,7 @@ import type {
   TransferHistoryFilter,
   TransferHistoryPage,
   Unlisten,
+  UpdateStatusView,
   UserFacingError,
 } from "./types";
 
@@ -366,6 +367,10 @@ export const api = {
 
   async onUserError(callback: (error: UserFacingError) => void): Promise<Unlisten> {
     return listenWhenTauri("synchalo://user-error", callback);
+  },
+
+  async onUpdateStatus(callback: (status: UpdateStatusView) => void): Promise<Unlisten> {
+    return listenWhenTauri("synchalo://update-status", callback);
   },
 
   async onNavigate(callback: (route: Route) => void): Promise<Unlisten> {

@@ -12,6 +12,10 @@
 .env
 .env.*
 !.env.example
+*.key
+*.p8
+*.p12
+*.pfx
 
 # Release packages are generated artifacts and must never be versioned.
 /release/

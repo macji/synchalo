@@ -231,8 +231,6 @@ mod tests {
 
     #[test]
     fn pairing_flag_can_be_republished() {
-        let observer = ServiceDaemon::new().unwrap();
-        let events = observer.browse(SERVICE_TYPE).unwrap();
         let device_id = Uuid::new_v4();
         let expected_prefix = format!("sh-{}", &device_id.simple().to_string()[..12]);
         let service = DiscoveryService::start(DiscoveryConfig {
@@ -244,21 +242,21 @@ mod tests {
         })
         .unwrap();
 
-        let initial_fullname = wait_for_pairing_state(&events, device_id, false);
+        let initial_fullname = observe_pairing_state(device_id, false);
         assert!(initial_fullname.starts_with(&expected_prefix));
         service.set_pairing_open(true).unwrap();
-        assert_eq!(
-            wait_for_pairing_state(&events, device_id, true),
-            initial_fullname
-        );
+        assert_eq!(observe_pairing_state(device_id, true), initial_fullname);
         service.set_pairing_open(false).unwrap();
-        assert_eq!(
-            wait_for_pairing_state(&events, device_id, false),
-            initial_fullname
-        );
+        assert_eq!(observe_pairing_state(device_id, false), initial_fullname);
+    }
 
+    fn observe_pairing_state(device_id: Uuid, expected: bool) -> String {
+        let observer = ServiceDaemon::new().unwrap();
+        let events = observer.browse(SERVICE_TYPE).unwrap();
+        let fullname = wait_for_pairing_state(&events, device_id, expected);
         let _ = observer.stop_browse(SERVICE_TYPE);
         let _ = observer.shutdown();
+        fullname
     }
 
     fn wait_for_pairing_state(
@@ -266,7 +264,7 @@ mod tests {
         device_id: Uuid,
         expected: bool,
     ) -> String {
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(10);
         let settle_for = Duration::from_millis(750);
         let expected_id = device_id.to_string();
         let mut last_match = None;

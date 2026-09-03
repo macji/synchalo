@@ -212,6 +212,8 @@ pub struct SettingsView {
     pub launch_at_startup: bool,
     pub keep_in_tray: bool,
     pub notifications_enabled: bool,
+    #[serde(default = "default_true")]
+    pub automatic_updates_enabled: bool,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -225,6 +227,11 @@ pub struct SettingsPatch {
     pub launch_at_startup: Option<bool>,
     pub keep_in_tray: Option<bool>,
     pub notifications_enabled: Option<bool>,
+    pub automatic_updates_enabled: Option<bool>,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -343,5 +350,6 @@ mod tests {
 
         assert!(!settings.delete_sync_enabled);
         assert!(!settings.favorite_sync_enabled);
+        assert!(settings.automatic_updates_enabled);
     }
 }

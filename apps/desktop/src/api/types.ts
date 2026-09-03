@@ -110,6 +110,7 @@ export interface SettingsView {
   launchAtStartup: boolean;
   keepInTray: boolean;
   notificationsEnabled: boolean;
+  automaticUpdatesEnabled: boolean;
 }
 
 export type SettingsPatch = Partial<SettingsView>;
@@ -152,6 +153,12 @@ export interface UserFacingError {
   message: string;
   detail: string | null;
   recoverable: boolean;
+}
+
+export interface UpdateStatusView {
+  state: "downloading" | "installed" | "error";
+  version: string | null;
+  message: string | null;
 }
 
 export type Unlisten = () => void;

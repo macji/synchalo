@@ -6,8 +6,8 @@ usage() {
 Usage: scripts/release.sh <version|tag> [--dry-run]
 
 Examples:
-  scripts/release.sh 0.1.0 --dry-run
-  scripts/release.sh v0.1.0
+  scripts/release.sh 0.1.2 --dry-run
+  scripts/release.sh v0.1.2
 
 The version must already match Cargo.toml, package.json,
 apps/desktop/package.json, and apps/desktop/src-tauri/tauri.conf.json.
@@ -64,12 +64,18 @@ fi
 tauri_version="$(jq -r '.version' apps/desktop/src-tauri/tauri.conf.json)"
 root_npm_version="$(jq -r '.version' package.json)"
 desktop_npm_version="$(jq -r '.version' apps/desktop/package.json)"
+lock_version="$(jq -r '.version' package-lock.json)"
+lock_root_version="$(jq -r '.packages[""] | .version' package-lock.json)"
+lock_desktop_version="$(jq -r '.packages["apps/desktop"] | .version' package-lock.json)"
 cargo_version="$(sed -n '/^\[workspace.package\]/,/^\[/s/^version = "\([^"]*\)"/\1/p' Cargo.toml)"
 
 for declared in \
   "$tauri_version" \
   "$root_npm_version" \
   "$desktop_npm_version" \
+  "$lock_version" \
+  "$lock_root_version" \
+  "$lock_desktop_version" \
   "$cargo_version"; do
   if [[ "$declared" != "$version" ]]; then
     echo "Version mismatch: tag is $tag but a project file declares $declared" >&2
