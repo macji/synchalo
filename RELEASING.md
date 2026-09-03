@@ -2,7 +2,7 @@
 
 SyncHalo publishes Linux and Windows packages through `.github/workflows/release.yml`. A pushed version tag is resolved to an immutable commit SHA, then shared source verification and both platform builds run in parallel. Publishing waits for every job to pass, verifies the artifacts, generates `SHA256SUMS.txt`, and creates or updates the matching GitHub Release. macOS remains a local Developer ID build and notarization workflow.
 
-Manual workflow runs accept a `target` choice. `linux` and `windows` build only that platform and retain the result as a seven-day Actions artifact; `validate-only` runs only the shared source checks; `all` runs validation plus both platform builds and publishes the GitHub Release. Tag pushes always behave as `all`, regardless of manual defaults.
+Manual workflow runs accept a source `ref` and a `target` choice. The ref can be a branch, tag, or commit for `linux`, `windows`, and `validate-only`; `all` requires the matching version tag. Single-platform builds retain the result as a seven-day Actions artifact, while `validate-only` runs only the shared source checks. Tag pushes always behave as `all`.
 
 ## Release Outputs
 
@@ -57,9 +57,9 @@ Trigger the release:
 scripts/release.sh 0.1.0
 ```
 
-For a faster non-publishing platform build, open **Actions → Publish Linux and Windows Release → Run workflow**, select an existing version tag, then choose `linux`, `windows`, or `validate-only`. Choose `all` only when the manual run should create or update the complete GitHub Release.
+For a faster non-publishing platform build, open **Actions → Publish Linux and Windows Release → Run workflow**, set `ref` to `main` (or another branch, tag, or commit), then choose `linux`, `windows`, or `validate-only`. Choose `all` only with a matching version tag when the manual run should create or update the complete GitHub Release.
 
-The script requires a clean `main` branch that exactly matches `origin/main`, creates an annotated `v0.1.0` tag, and pushes it. Alternatively, run **Publish Desktop Release** from the Actions page and provide an existing version tag.
+The script requires a clean `main` branch that exactly matches `origin/main`, creates an annotated `v0.1.0` tag, and pushes it. Alternatively, run **Publish Linux and Windows Release** from the Actions page and provide a source ref plus target.
 
 ## Private Repository Access
 

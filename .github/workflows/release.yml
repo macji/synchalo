@@ -6,9 +6,10 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
-      tag:
-        description: Existing version tag to validate, build, or publish, for example v0.1.0
+      ref:
+        description: Branch, tag, or commit to validate/build; all requires a version tag
         required: true
+        default: main
         type: string
       target:
         description: Work to run; single-platform builds only upload Actions artifacts
@@ -25,7 +26,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && format('{0}-{1}', inputs.ref, inputs.target) || github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -34,7 +35,7 @@ env:
 
 jobs:
   metadata:
-    name: Validate release tag
+    name: Resolve build source
     runs-on: ubuntu-latest
     outputs:
       commit: ${{ steps.release.outputs.commit }}
@@ -46,20 +47,20 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - id: release
         name: Validate version metadata
         env:
-          REQUESTED_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          REQUESTED_REF: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref_name }}
           REQUESTED_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'all' }}
         shell: bash
         run: |
           set -euo pipefail
-          tag="$REQUESTED_TAG"
+          source_ref="$REQUESTED_REF"
           target="$REQUESTED_TARGET"
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
-            echo "Invalid release tag: $tag" >&2
+          if [[ -z "$source_ref" ]]; then
+            echo "Build source ref must not be empty" >&2
             exit 1
           fi
           case "$target" in
@@ -81,21 +82,34 @@ jobs:
               exit 1
             fi
           done
-          if [[ "$tag" != "v$tauri_version" ]]; then
-            echo "Tag $tag does not match application version v$tauri_version" >&2
-            exit 1
+          commit="$(git rev-parse HEAD)"
+          tag=""
+          prerelease=false
+          if [[ "$target" == "all" ]]; then
+            tag="${source_ref#refs/tags/}"
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+              echo "The all target requires a version tag, got: $source_ref" >&2
+              exit 1
+            fi
+            if [[ "$tag" != "v$tauri_version" ]]; then
+              echo "Tag $tag does not match application version v$tauri_version" >&2
+              exit 1
+            fi
+            tag_commit="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
+            if [[ "$commit" != "$tag_commit" ]]; then
+              echo "Checked-out commit does not match $tag" >&2
+              exit 1
+            fi
+            if [[ "$tag" == *-* ]]; then
+              prerelease=true
+            fi
           fi
 
-          commit="$(git rev-parse --verify "refs/tags/$tag^{commit}")"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
           echo "target=$target" >> "$GITHUB_OUTPUT"
           echo "version=$tauri_version" >> "$GITHUB_OUTPUT"
-          if [[ "$tag" == *-* ]]; then
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
 
   verify:
     name: Verify release source
