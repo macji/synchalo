@@ -1,0 +1,6 @@
+Types: deb
+URIs: https://macji.github.io/synchalo/apt
+Suites: stable
+Components: main
+Architectures: arm64
+Signed-By: /usr/share/keyrings/synchalo-archive-keyring.asc

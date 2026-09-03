@@ -60,7 +60,12 @@
         "depends": [
           "libwebkit2gtk-4.1-0",
           "libgtk-3-0"
-        ]
+        ],
+        "files": {
+          "/etc/apt/sources.list.d/synchalo.sources": "../../../packaging/deb/synchalo.sources",
+          "/usr/share/keyrings/synchalo-archive-keyring.asc": "../../../packaging/apt/synchalo-archive-keyring.asc"
+        },
+        "postInstallScript": "../../../packaging/deb/postinst"
       }
     }
   },

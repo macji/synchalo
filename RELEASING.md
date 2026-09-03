@@ -14,7 +14,7 @@ Manual workflow runs accept a source `ref` and a `target` choice. The ref can be
 
 The repository variable `WINDOWS_SIGNING_MODE` makes Windows release intent explicit. Set it to `signpath` for SignPath Foundation Authenticode signing, or temporarily to `unsigned` while the OSS application is under review. Unsigned release notes always disclose the warning. Manual `windows` builds remain unsigned short-lived Actions artifacts and never update a GitHub Release.
 
-Ubuntu repository metadata is signed by the dedicated SyncHalo APT key. The private key is stored only as an encrypted local backup and GitHub Actions secrets; GitHub Pages contains the public key, signed metadata, and the current ARM64 DEB. A downloaded standalone DEB can still be described as an unknown source by a graphical installer, while installation through the configured APT source verifies repository origin and integrity.
+Ubuntu repository metadata is signed by the dedicated SyncHalo APT key. The private key is stored only as an encrypted local backup and GitHub Actions secrets; GitHub Pages contains the public key, signed metadata, and the current ARM64 DEB. The public ASCII key and a Deb822 source definition are also embedded in every DEB under `/usr/share/keyrings/` and `/etc/apt/sources.list.d/`, so one standalone installation enrolls the signed source for later system updates. The DEB post-install migration removes the exact legacy `synchalo.list` created by older official instructions, but preserves any customized file. The release build verifies that this pinned public key matches the private release key. A downloaded standalone DEB can still be described as an unknown source during that first installation; subsequent APT metadata and packages are authenticated by the enrolled source.
 
 ## Required GitHub Secrets
 
@@ -64,7 +64,7 @@ Enable **Settings → Pages → Build and deployment → Source: GitHub Actions*
 https://macji.github.io/synchalo/apt
 ```
 
-Never commit certificates, private keys, or passwords.
+Only the public APT key at `packaging/apt/synchalo-archive-keyring.asc` is committed. Never commit certificates, private keys, or passwords.
 
 ## macOS Local Release
 

@@ -61,6 +61,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: bash -n scripts/*.sh
+      - run: tests/release/deb_apt_bootstrap_smoke.sh
       - run: tests/release/apt_repository_smoke.sh
 
   package:
@@ -125,6 +126,14 @@ jobs:
           npm run tauri -- build
           ${{ matrix.tauri_args }}
           --config '{"bundle":{"createUpdaterArtifacts":false}}'
+
+      - name: Validate DEB APT bootstrap
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          deb="$(find target/aarch64-unknown-linux-gnu/release/bundle/deb -maxdepth 1 -type f -name '*.deb' -print -quit)"
+          test -n "$deb"
+          tests/release/deb_apt_bootstrap_smoke.sh "$deb"
 
       - uses: actions/upload-artifact@v7
         with:

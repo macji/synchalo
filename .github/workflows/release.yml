@@ -210,6 +210,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
       - run: bash -n scripts/*.sh
+      - run: tests/release/deb_apt_bootstrap_smoke.sh
       - run: tests/release/apt_repository_smoke.sh
 
   build-linux:
@@ -275,6 +276,7 @@ jobs:
           test -s "$appimage_signature"
 
           dpkg-deb --info "$deb" >/dev/null
+          tests/release/deb_apt_bootstrap_smoke.sh "$deb"
           file "$appimage" | grep -q 'ELF.*ARM aarch64'
 
           mkdir -p release-assets
@@ -565,7 +567,7 @@ jobs:
 
           Platform packages:
 
-          - Ubuntu Desktop ARM64: DEB, AppImage, and signed APT repository
+          - Ubuntu Desktop ARM64: DEB with automatic signed APT enrollment, AppImage, and signed APT repository
           - Windows x64: MSI and NSIS setup executable (${windows_status})
 
           Signed updater artifacts are included for AppImage and Windows installations.

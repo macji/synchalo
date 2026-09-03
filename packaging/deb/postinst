@@ -1,0 +1,11 @@
+#!/bin/sh
+set -e
+
+legacy_source="${DPKG_ROOT:-}/etc/apt/sources.list.d/synchalo.list"
+legacy_definition='deb [arch=arm64 signed-by=/etc/apt/keyrings/synchalo.gpg] https://macji.github.io/synchalo/apt stable main'
+
+if [ -f "$legacy_source" ] && [ "$(cat "$legacy_source")" = "$legacy_definition" ]; then
+  rm -f -- "$legacy_source"
+fi
+
+exit 0

@@ -46,10 +46,13 @@ export APT_GPG_PRIVATE_KEY="$(
   gpg --batch --pinentry-mode loopback --passphrase test-only-passphrase \
     --armor --export-secret-keys "$APT_GPG_FINGERPRINT"
 )"
+export SYNCHALO_APT_PUBLIC_KEY_PATH="$test_root/test-archive-keyring.asc"
+gpg --batch --armor --export "$APT_GPG_FINGERPRINT" > "$SYNCHALO_APT_PUBLIC_KEY_PATH"
 export APT_GPG_PASSPHRASE=test-only-passphrase
 export RELEASE_VERSION=9.9.9
 
 "$project_root/scripts/build-apt-repository.sh" "$assets_dir" "$site_dir"
+cmp "$project_root/packaging/deb/synchalo.sources" "$site_dir/apt/synchalo.sources"
 
 source_list="$test_root/synchalo.list"
 lists_dir="$test_root/lists"

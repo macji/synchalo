@@ -82,6 +82,15 @@ if [[ -z "$actual_fingerprint" || "$actual_fingerprint" != "$expected_fingerprin
   echo "Imported APT signing key does not match APT_GPG_FINGERPRINT." >&2
   exit 1
 fi
+bundled_key="${SYNCHALO_APT_PUBLIC_KEY_PATH:-$project_root/packaging/apt/synchalo-archive-keyring.asc}"
+bundled_fingerprint="$(
+  gpg --batch --with-colons --show-keys "$bundled_key" 2>/dev/null \
+    | awk -F: '$1 == "fpr" { print toupper($10); exit }'
+)"
+if [[ -z "$bundled_fingerprint" || "$bundled_fingerprint" != "$actual_fingerprint" ]]; then
+  echo "Bundled APT public key does not match the release signing key." >&2
+  exit 1
+fi
 
 release_file="$binary_dir/../../Release"
 printf '%s' "$APT_GPG_PASSPHRASE" \
@@ -95,6 +104,7 @@ printf '%s' "$APT_GPG_PASSPHRASE" \
 
 gpg --batch --export "$actual_fingerprint" > "$apt_root/synchalo-archive-keyring.gpg"
 gpg --batch --armor --export "$actual_fingerprint" > "$apt_root/synchalo-archive-keyring.asc"
+install -m 0644 "$project_root/packaging/deb/synchalo.sources" "$apt_root/synchalo.sources"
 gpgv --keyring "$apt_root/synchalo-archive-keyring.gpg" \
   "$binary_dir/../../Release.gpg" "$release_file"
 gpgv --keyring "$apt_root/synchalo-archive-keyring.gpg" \
