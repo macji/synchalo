@@ -87,6 +87,7 @@ def main() -> None:
         assert first_device.get_by_text("Jason 的 MacBook Air").is_visible()
         assert first_device.get_by_text("本机", exact=True).is_visible()
         assert page.get_by_text("把文件拖入或者直接粘贴文件").is_visible()
+        assert page.get_by_text("未指定目标，将同步全部在线设备").is_visible()
         assert page.get_by_text(re.compile(r"^(01|02|03) ·")).count() == 0
         assert page.get_by_role("button", name="粘贴并同步").count() == 0
         assert page.get_by_role("button", name="选择文件", exact=True).count() == 0

@@ -297,7 +297,7 @@ export function FilesPage({
                 <Wifi aria-hidden="true" size={14} />
                 {selectedTargetIds.length
                   ? `将同步到 ${selectedTargetIds.length} 台指定设备`
-                  : `未指定目标，将同步到全部 ${onlineTargetIds.length} 台在线设备`}
+                  : "未指定目标，将同步全部在线设备"}
               </div>
             )}
 
