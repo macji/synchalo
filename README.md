@@ -35,7 +35,7 @@ SyncHalo 是一款本地优先的局域网剪贴板与文件同步工具。它�
 | 平台 | 架构 | 安装包 | 更新方式 |
 | --- | --- | --- | --- |
 | macOS 13+ | Apple Silicon（ARM64） | ZIP 中的 `.app` | 应用内签名更新 |
-| Ubuntu 24.04 | ARM64 | `.deb` | 应用提醒、Polkit 授权、签名 APT 安装 |
+| Ubuntu 24.04 | ARM64、x86_64（amd64） | `.deb` | 应用提醒、Polkit 授权、签名 APT 安装 |
 | Windows 10/11 | x64 | NSIS `.exe`、`.msi` | 应用内签名更新 |
 
 请先在 [GitHub Releases](https://github.com/macji/synchalo/releases/latest) 下载当前平台的最新版。
@@ -54,11 +54,11 @@ SyncHalo 是一款本地优先的局域网剪贴板与文件同步工具。它�
 dpkg --print-architecture
 ```
 
-当前安装包要求输出为 `arm64`。下载 DEB 后运行：
+当前安装包支持 `arm64` 和 `amd64`。下载与输出架构对应的 DEB 后运行：
 
 ```bash
 cd ~/Downloads
-sudo apt install ./SyncHalo_*_ubuntu-arm64.deb
+sudo apt install ./SyncHalo_*_ubuntu-*.deb
 sudo apt update
 ```
 
@@ -82,7 +82,7 @@ printf '%s\n' \
   'URIs: https://macji.github.io/synchalo/apt' \
   'Suites: stable' \
   'Components: main' \
-  'Architectures: arm64' \
+  'Architectures: amd64 arm64' \
   'Signed-By: /etc/apt/keyrings/synchalo-archive-keyring.asc' \
   | sudo tee /etc/apt/sources.list.d/synchalo.sources >/dev/null
 sudo apt update
@@ -164,9 +164,9 @@ APPLE_SIGNING_IDENTITY=- npm run tauri -- build \
 
 该构建没有 Apple 公证，不能作为正式发布包分发。
 
-### Ubuntu ARM64 源码构建
+### Ubuntu 源码构建
 
-请在 ARM64 Ubuntu 主机或 ARM64 GitHub runner 上安装依赖：
+请在 Ubuntu 24.04 ARM64 或 x86_64 主机上安装依赖：
 
 ```bash
 sudo apt update
@@ -178,13 +178,11 @@ sudo apt install -y \
   patchelf \
   xdg-utils
 
-rustup target add aarch64-unknown-linux-gnu
 npm ci
-npm run tauri -- build \
-  --target aarch64-unknown-linux-gnu \
-  --bundles deb \
-  --config '{"bundle":{"createUpdaterArtifacts":false}}'
+npm run tauri -- build --bundles deb
 ```
+
+GitHub Actions 使用 `ubuntu-24.04-arm` 和 `ubuntu-24.04` runner 分别原生构建 ARM64 与 x86_64 DEB，不进行跨架构伪编译。
 
 ### Windows x64 源码构建
 
@@ -245,6 +243,6 @@ packaging/               Linux 软件源和安装包资源
 
 ## 发布说明
 
-正式标签通过 GitHub Actions 构建 Ubuntu ARM64 与 Windows x64，生成并发布签名 APT 仓库。macOS ARM64 在授权 Mac 上完成 Developer ID 签名、Apple 公证和 Tauri 更新签名，然后上传到同一个 GitHub Release。
+正式标签通过 GitHub Actions 并行构建 Ubuntu ARM64、Ubuntu x86_64 与 Windows x64，生成并发布双架构签名 APT 仓库。macOS ARM64 在授权 Mac 上完成 Developer ID 签名、Apple 公证和 Tauri 更新签名，然后上传到同一个 GitHub Release。
 
 构建和仓库中只包含公开验证密钥；APT 私钥、Tauri 更新私钥、Apple 证书及公证凭据不会进入源码或 Git 历史。完整流程见 [RELEASING.md](RELEASING.md)。

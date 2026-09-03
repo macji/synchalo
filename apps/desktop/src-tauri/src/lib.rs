@@ -643,7 +643,7 @@ pub(crate) async fn install_pending_update(
     #[cfg(target_os = "linux")]
     {
         let PendingUpdate::Deb(update) = pending;
-        return install_deb_update(app, coordinator, update).await;
+        install_deb_update(app, coordinator, update).await
     }
 
     #[cfg(not(target_os = "linux"))]

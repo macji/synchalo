@@ -7,7 +7,7 @@
 | 协议版本 | SyncHalo Protocol v2 |
 | 文档状态 | 讨论稿 |
 | 更新日期 | 2026-09-03 |
-| 首发平台 | macOS、Ubuntu 24.04 ARM64 |
+| 首发平台 | macOS、Ubuntu 24.04 ARM64/x86_64、Windows x64 |
 
 ## 1. 文档目的
 
@@ -20,7 +20,7 @@
 - 文本剪贴板和文件为什么采用不同的同步语义。
 - 文件如何获得高吞吐、完整性校验和断点续传能力。
 - 剪贴板历史、文件历史、密钥、设置和传输进度如何安全地保存在本地。
-- macOS 与 Ubuntu ARM64，尤其 Ubuntu Wayland 环境下的能力边界。
+- macOS 与 Ubuntu ARM64/x86_64，尤其 Ubuntu Wayland 环境下的能力边界。
 
 ## 2. 产品概述
 
@@ -35,7 +35,7 @@ SyncHalo 是一个面向个人多设备和小型可信工作组的局域网同�
 - **快速**：复制文本后，其他在线设备几乎立即可粘贴。
 - **直观**：文件拖入或粘贴一次，其他设备自动接收。
 - **本地优先**：无云端上传，历史、设置和文件都保存在本机。
-- **跨平台**：MVP 覆盖 macOS 与 Ubuntu ARM64，架构预留 Windows 和移动端能力。
+- **跨平台**：桌面端覆盖 macOS、Ubuntu ARM64/x86_64 与 Windows x64，架构预留移动端能力。
 - **高性能**：传输核心不经过 WebView，使用 Rust 和 QUIC 直接流式传输。
 - **可恢复**：文件支持校验、失败重试和断点续传。
 
@@ -61,7 +61,7 @@ SyncHalo 是一个面向个人多设备和小型可信工作组的局域网同�
 - 展示剪贴板历史和文件同步历史。
 - 文件支持分块校验、失败重试、断点续传和同名冲突处理。
 - 支持托盘驻留、暂停同步和开机启动。
-- 支持 macOS 安装包和 Ubuntu ARM64 的 DEB 安装包。
+- 支持 macOS、Windows x64 安装包和 Ubuntu ARM64/x86_64 的 DEB 安装包。
 
 ### 3.2 MVP 非目标
 
@@ -135,8 +135,8 @@ SyncHalo 是一个面向个人多设备和小型可信工作组的局域网同�
 | 平台 | MVP 范围 | 说明 |
 | --- | --- | --- |
 | macOS | Apple Silicon、Intel | 最低 macOS 13；后台剪贴板使用 NSPasteboard，文件粘贴板读取 file URL。 |
-| Ubuntu X11 | Ubuntu 24.04 ARM64 | 使用 X11 clipboard selection，文件粘贴板读取 `text/uri-list`。 |
-| Ubuntu Wayland | Ubuntu 24.04 ARM64 | compositor 支持 data-control 时启用后台监听；否则降级为 App 活跃或手动同步。 |
+| Ubuntu X11 | Ubuntu 24.04 ARM64/x86_64 | 使用 X11 clipboard selection，文件粘贴板读取 `text/uri-list`。 |
+| Ubuntu Wayland | Ubuntu 24.04 ARM64/x86_64 | compositor 支持 data-control 时启用后台监听；否则降级为 App 活跃或手动同步。 |
 
 ### 6.2 Linux Wayland 限制
 
@@ -340,7 +340,7 @@ Wayland 对后台读取和控制全局剪贴板有更严格的安全限制，且
 关闭主窗口默认隐藏到托盘；用户选择“退出”才终止后台服务。
 
 - macOS 状态栏图标左键释放后直接显示、还原并聚焦主窗口；右键保留托盘菜单。
-- Ubuntu ARM64 使用 AppIndicator。由于该接口不向 Tauri 提供图标点击事件，点击图标打开原生菜单，通过首项“打开 SyncHalo”显示并聚焦主窗口。
+- Ubuntu ARM64/x86_64 使用 AppIndicator。由于该接口不向 Tauri 提供图标点击事件，点击图标打开原生菜单，通过首项“打开 SyncHalo”显示并聚焦主窗口。
 
 ## 8. 用户流程
 
@@ -723,7 +723,7 @@ synchalo/
 - macOS 使用 WKWebView，Ubuntu 使用 WebKitGTK；MVP 的 CSS 与 JavaScript 基线以两端最低支持版本的交集为准。
 - 核心布局只依赖稳定的 CSS Grid/Flexbox，不依赖实验性浏览器特性。
 - WebView 差异只能影响展示层，不能改变同步、传输、加密或持久化语义。
-- CI 在 macOS ARM64 与 Ubuntu ARM64 原生 runner 分别执行测试和安装包构建；Ubuntu 覆盖目标 WebKitGTK 版本。
+- CI 在 macOS ARM64、Ubuntu ARM64 与 Ubuntu x86_64 原生 runner 分别执行测试和安装包构建；Ubuntu 覆盖目标 WebKitGTK 版本。
 
 ## 12. 局域网发现方案
 
@@ -1526,9 +1526,9 @@ KEYSTORE_UNAVAILABLE
 ### 23.3 平台矩阵
 
 - macOS Intel ↔ macOS Apple Silicon。
-- macOS ↔ Ubuntu 24.04 ARM64 X11。
-- macOS ↔ Ubuntu 24.04 ARM64 Wayland。
-- Ubuntu ARM64 ↔ Ubuntu ARM64。
+- macOS ↔ Ubuntu 24.04 ARM64/x86_64 X11。
+- macOS ↔ Ubuntu 24.04 ARM64/x86_64 Wayland。
+- Ubuntu ARM64 ↔ Ubuntu x86_64。
 - Ubuntu Wayland：GNOME、KDE、wlroots 能力检测和降级。
 - IPv4-only、IPv6-only、双栈。
 - Wi-Fi、以太网、两块网卡、VPN 同时存在。
@@ -1559,14 +1559,14 @@ KEYSTORE_UNAVAILABLE
 ### 24.1 构建产物
 
 - macOS：通用或分别构建 arm64/x86_64，DMG，签名并 notarize。
-- Ubuntu ARM64：DEB；rpm 和其他架构作为后续补充。
+- Ubuntu ARM64/x86_64：DEB；rpm 作为后续补充。
 
 ### 24.2 CI
 
 使用原生平台矩阵构建：
 
 - macOS runner；
-- Ubuntu 24.04 ARM64 runner；
+- Ubuntu 24.04 ARM64 与 x86_64 runner；
 - Rust 单元测试、Clippy、格式检查；
 - TypeScript 类型检查、ESLint、前端单元与组件测试；
 - macOS WKWebView 与 Ubuntu WebKitGTK 端到端交互测试和关键页面截图对比；
@@ -1584,7 +1584,7 @@ KEYSTORE_UNAVAILABLE
 | --- | --- | --- |
 | M0：协议与骨架 | Workspace、Tauri 2 + React/TypeScript/Vite、SQLite 迁移、事件模型、HLC | 1 周 |
 | M1：发现与配对 | mDNS、QUIC、身份、配对、设备页 | 1–1.5 周 |
-| M2：剪贴板 | macOS/Ubuntu ARM64 适配、回声抑制、历史、暂停 | 1–1.5 周 |
+| M2：剪贴板 | macOS/Ubuntu ARM64/x86_64 适配、回声抑制、历史、暂停 | 1–1.5 周 |
 | M3：文件传输 | 拖放/粘贴、分块、校验、进度、冲突 | 1.5–2 周 |
 | M4：恢复与历史 | 续传、重启恢复、文件历史、清理 | 1 周 |
 | M5：硬化发布 | 平台 QA、性能、安全、安装包与签名 | 1–2 周 |
@@ -1595,7 +1595,7 @@ KEYSTORE_UNAVAILABLE
 
 满足以下条件才可判定 MVP 完成：
 
-1. macOS 与 Ubuntu 24.04 ARM64 任意两台设备可在局域网内发现并完成配对。
+1. macOS、Windows x64 与 Ubuntu 24.04 ARM64/x86_64 任意两台设备可在局域网内发现并完成配对。
 2. 未配对设备无法读取或注入剪贴板与文件事件。
 3. A 复制文本后 B 可在 500 ms 目标延迟内粘贴；B 不会把远端写入再次发送回 A。
 4. A/B 同时复制时，两个历史事件均保留，所有在线设备最终选择同一事件。

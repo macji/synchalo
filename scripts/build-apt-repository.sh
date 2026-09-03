@@ -23,45 +23,66 @@ assets_dir="$(cd "$1" && pwd)"
 site_dir="$2"
 
 mapfile -t deb_packages < <(find "$assets_dir" -maxdepth 1 -type f -name '*.deb' -print)
-if [[ ${#deb_packages[@]} -ne 1 ]]; then
-  echo "Expected exactly one DEB package in $assets_dir, found ${#deb_packages[@]}." >&2
-  exit 1
-fi
-deb_package="${deb_packages[0]}"
-
-package_name="$(dpkg-deb -f "$deb_package" Package)"
-package_version="$(dpkg-deb -f "$deb_package" Version)"
-package_architecture="$(dpkg-deb -f "$deb_package" Architecture)"
-if [[ "$package_name" != "sync-halo" ]]; then
-  echo "Unexpected Debian package name: $package_name" >&2
-  exit 1
-fi
-if [[ "$package_version" != "$RELEASE_VERSION" ]]; then
-  echo "DEB version $package_version does not match release $RELEASE_VERSION." >&2
-  exit 1
-fi
-if [[ "$package_architecture" != "arm64" ]]; then
-  echo "Unexpected Debian architecture: $package_architecture" >&2
+expected_architectures="${APT_EXPECTED_ARCHITECTURES:-amd64 arm64}"
+expected_count="$(wc -w <<< "$expected_architectures" | tr -d '[:space:]')"
+if [[ ${#deb_packages[@]} -ne "$expected_count" ]]; then
+  echo "Expected $expected_count DEB packages in $assets_dir, found ${#deb_packages[@]}." >&2
   exit 1
 fi
 
 apt_root="$site_dir/apt"
-binary_dir="$apt_root/dists/stable/main/binary-arm64"
 pool_dir="$apt_root/pool/main/s/sync-halo"
-mkdir -p "$binary_dir" "$pool_dir"
-install -m 0644 "$deb_package" "$pool_dir/sync-halo_${RELEASE_VERSION}_arm64.deb"
+mkdir -p "$pool_dir"
+package_architectures=()
+for deb_package in "${deb_packages[@]}"; do
+  package_name="$(dpkg-deb -f "$deb_package" Package)"
+  package_version="$(dpkg-deb -f "$deb_package" Version)"
+  package_architecture="$(dpkg-deb -f "$deb_package" Architecture)"
+  if [[ "$package_name" != "sync-halo" ]]; then
+    echo "Unexpected Debian package name: $package_name" >&2
+    exit 1
+  fi
+  if [[ "$package_version" != "$RELEASE_VERSION" ]]; then
+    echo "DEB version $package_version does not match release $RELEASE_VERSION." >&2
+    exit 1
+  fi
+  case "$package_architecture" in
+    amd64|arm64) ;;
+    *)
+      echo "Unexpected Debian architecture: $package_architecture" >&2
+      exit 1
+      ;;
+  esac
+  if [[ " ${package_architectures[*]} " == *" $package_architecture "* ]]; then
+    echo "Duplicate Debian architecture: $package_architecture" >&2
+    exit 1
+  fi
+  package_architectures+=("$package_architecture")
+  install -m 0644 "$deb_package" \
+    "$pool_dir/sync-halo_${RELEASE_VERSION}_${package_architecture}.deb"
+done
+
+actual_architectures="$(printf '%s\n' "${package_architectures[@]}" | sort | paste -sd' ' -)"
+expected_architectures="$(tr ' ' '\n' <<< "$expected_architectures" | sed '/^$/d' | sort -u | paste -sd' ' -)"
+if [[ "$actual_architectures" != "$expected_architectures" ]]; then
+  echo "DEB architectures '$actual_architectures' do not match expected '$expected_architectures'." >&2
+  exit 1
+fi
 
 (
   cd "$apt_root"
-  dpkg-scanpackages --arch arm64 pool /dev/null > dists/stable/main/binary-arm64/Packages
-  gzip -9 -n -c dists/stable/main/binary-arm64/Packages \
-    > dists/stable/main/binary-arm64/Packages.gz
+  for package_architecture in ${actual_architectures}; do
+    binary_dir="dists/stable/main/binary-${package_architecture}"
+    mkdir -p "$binary_dir"
+    dpkg-scanpackages --arch "$package_architecture" pool /dev/null > "$binary_dir/Packages"
+    gzip -9 -n -c "$binary_dir/Packages" > "$binary_dir/Packages.gz"
+  done
   apt-ftparchive \
     -o APT::FTPArchive::Release::Origin=SyncHalo \
     -o APT::FTPArchive::Release::Label=SyncHalo \
     -o APT::FTPArchive::Release::Suite=stable \
     -o APT::FTPArchive::Release::Codename=stable \
-    -o APT::FTPArchive::Release::Architectures=arm64 \
+    -o "APT::FTPArchive::Release::Architectures=$actual_architectures" \
     -o APT::FTPArchive::Release::Components=main \
     -o APT::FTPArchive::Release::Description='SyncHalo signed APT repository' \
     release dists/stable > dists/stable/Release
@@ -92,27 +113,27 @@ if [[ -z "$bundled_fingerprint" || "$bundled_fingerprint" != "$actual_fingerprin
   exit 1
 fi
 
-release_file="$binary_dir/../../Release"
+release_file="$apt_root/dists/stable/Release"
 printf '%s' "$APT_GPG_PASSPHRASE" \
   | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
       --local-user "$actual_fingerprint" --digest-algo SHA256 \
-      --clearsign --output "$binary_dir/../../InRelease" "$release_file"
+      --clearsign --output "$apt_root/dists/stable/InRelease" "$release_file"
 printf '%s' "$APT_GPG_PASSPHRASE" \
   | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
       --local-user "$actual_fingerprint" --digest-algo SHA256 \
-      --armor --detach-sign --output "$binary_dir/../../Release.gpg" "$release_file"
+      --armor --detach-sign --output "$apt_root/dists/stable/Release.gpg" "$release_file"
 
 gpg --batch --export "$actual_fingerprint" > "$apt_root/synchalo-archive-keyring.gpg"
 gpg --batch --armor --export "$actual_fingerprint" > "$apt_root/synchalo-archive-keyring.asc"
 install -m 0644 "$project_root/packaging/deb/synchalo.sources" "$apt_root/synchalo.sources"
 gpgv --keyring "$apt_root/synchalo-archive-keyring.gpg" \
-  "$binary_dir/../../Release.gpg" "$release_file"
+  "$apt_root/dists/stable/Release.gpg" "$release_file"
 gpgv --keyring "$apt_root/synchalo-archive-keyring.gpg" \
-  "$binary_dir/../../InRelease"
+  "$apt_root/dists/stable/InRelease"
 
 install -m 0644 "$project_root/packaging/apt/index.html" "$site_dir/index.html"
 install -m 0644 "$project_root/packaging/apt/index.html" "$apt_root/index.html"
 touch "$site_dir/.nojekyll"
 
-echo "APT repository created for sync-halo $RELEASE_VERSION ($package_architecture)."
+echo "APT repository created for sync-halo $RELEASE_VERSION ($actual_architectures)."
 echo "Signing fingerprint: $actual_fingerprint"

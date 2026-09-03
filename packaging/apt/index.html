@@ -14,9 +14,9 @@
   </head>
   <body>
     <h1>SyncHalo APT Repository</h1>
-    <p>适用于 Ubuntu 24.04 ARM64。推荐从 GitHub Release 下载最新版 DEB；安装包会自动配置本签名源：</p>
+    <p>适用于 Ubuntu 24.04 ARM64 和 x86_64。推荐从 GitHub Release 下载对应架构的最新版 DEB；安装包会自动配置本签名源：</p>
     <pre><code>cd ~/Downloads
-sudo apt install ./SyncHalo_*_ubuntu-arm64.deb
+sudo apt install ./SyncHalo_*_ubuntu-*.deb
 sudo apt update</code></pre>
     <p>也可以在安装前手动添加签名源：</p>
     <pre><code>sudo install -d -m 0755 /etc/apt/keyrings
@@ -27,7 +27,7 @@ printf '%s\n' \
   'URIs: https://macji.github.io/synchalo/apt' \
   'Suites: stable' \
   'Components: main' \
-  'Architectures: arm64' \
+  'Architectures: amd64 arm64' \
   'Signed-By: /etc/apt/keyrings/synchalo-archive-keyring.asc' \
   | sudo tee /etc/apt/sources.list.d/synchalo.sources &gt;/dev/null
 sudo apt-get update

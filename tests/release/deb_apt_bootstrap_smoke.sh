@@ -67,7 +67,7 @@ Types: deb
 URIs: https://macji.github.io/synchalo/apt
 Suites: stable
 Components: main
-Architectures: arm64
+Architectures: amd64 arm64
 Signed-By: /usr/share/keyrings/synchalo-archive-keyring.asc
 EOF
 )"
@@ -85,8 +85,8 @@ if [[ "$actual_fingerprint" != "$expected_fingerprint" ]]; then
   exit 1
 fi
 
-if ! rg -q '<allow_active>auth_admin</allow_active>' "$update_policy" \
-  || ! rg -q '<annotate key="org.freedesktop.policykit.exec.path">/usr/lib/synchalo/update-synchalo</annotate>' "$update_policy"; then
+if ! grep -Fq '<allow_active>auth_admin</allow_active>' "$update_policy" \
+  || ! grep -Fq '<annotate key="org.freedesktop.policykit.exec.path">/usr/lib/synchalo/update-synchalo</annotate>' "$update_policy"; then
   echo "Unexpected SyncHalo Polkit policy." >&2
   exit 1
 fi
@@ -113,10 +113,14 @@ if [[ $# -eq 1 ]]; then
     echo "Unexpected Debian package name." >&2
     exit 1
   fi
-  if [[ "$(dpkg-deb -f "$deb_package" Architecture)" != "arm64" ]]; then
-    echo "Unexpected Debian package architecture." >&2
-    exit 1
-  fi
+  package_architecture="$(dpkg-deb -f "$deb_package" Architecture)"
+  case "$package_architecture" in
+    amd64|arm64) ;;
+    *)
+      echo "Unexpected Debian package architecture: $package_architecture" >&2
+      exit 1
+      ;;
+  esac
   if ! dpkg-deb -f "$deb_package" Depends | tr ',' '\n' | sed 's/^ *//' | grep -Eq '^pkexec([[:space:](]|$)'; then
     echo "Built DEB does not depend on pkexec." >&2
     exit 1

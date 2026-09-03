@@ -18,22 +18,25 @@ cleanup() {
 }
 trap cleanup EXIT
 
-package_root="$test_root/package"
 assets_dir="$test_root/assets"
 site_dir="$test_root/site"
 gpg_home="$test_root/gnupg"
-mkdir -p "$package_root/DEBIAN" "$assets_dir" "$gpg_home"
+mkdir -p "$assets_dir" "$gpg_home"
 chmod 0700 "$gpg_home"
 
-cat > "$package_root/DEBIAN/control" <<'EOF'
+for package_architecture in amd64 arm64; do
+  package_root="$test_root/package-$package_architecture"
+  mkdir -p "$package_root/DEBIAN"
+  cat > "$package_root/DEBIAN/control" <<EOF
 Package: sync-halo
 Version: 9.9.9
-Architecture: arm64
+Architecture: $package_architecture
 Maintainer: SyncHalo <releases@synchalo.io>
 Description: SyncHalo APT repository smoke-test package
 EOF
-dpkg-deb --root-owner-group --build \
-  "$package_root" "$assets_dir/SyncHalo_9.9.9_ubuntu-arm64.deb" >/dev/null
+  dpkg-deb --root-owner-group --build \
+    "$package_root" "$assets_dir/SyncHalo_9.9.9_ubuntu-${package_architecture}.deb" >/dev/null
+done
 
 export GNUPGHOME="$gpg_home"
 gpg --batch --pinentry-mode loopback --passphrase test-only-passphrase \
@@ -53,16 +56,27 @@ export RELEASE_VERSION=9.9.9
 
 "$project_root/scripts/build-apt-repository.sh" "$assets_dir" "$site_dir"
 cmp "$project_root/packaging/deb/synchalo.sources" "$site_dir/apt/synchalo.sources"
+for package_architecture in amd64 arm64; do
+  packages="$site_dir/apt/dists/stable/main/binary-${package_architecture}/Packages.gz"
+  gzip -dc "$packages" \
+    | awk -v architecture="$package_architecture" '
+        /^Package: sync-halo$/ { package_found = 1 }
+        /^Version: 9.9.9$/ { version_found = 1 }
+        $0 == "Architecture: " architecture { architecture_found = 1 }
+        END { exit !(package_found && version_found && architecture_found) }
+      '
+done
 
 source_list="$test_root/synchalo.list"
 lists_dir="$test_root/lists"
 mkdir -p "$lists_dir/partial"
 chmod 0755 "$test_root" "$site_dir" "$site_dir/apt" "$lists_dir" "$lists_dir/partial"
-printf 'deb [arch=arm64 signed-by=%s] file:%s stable main\n' \
+printf 'deb [arch=amd64 signed-by=%s] file:%s stable main\n' \
   "$site_dir/apt/synchalo-archive-keyring.gpg" \
   "$site_dir/apt" \
   > "$source_list"
 apt_options=(
+  -o APT::Architecture=amd64
   -o "Dir::Etc::sourcelist=$source_list"
   -o Dir::Etc::sourceparts=-
   -o "Dir::State::lists=$lists_dir"

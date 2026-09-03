@@ -9,12 +9,13 @@ Manual workflow runs accept a source `ref` and a `target` choice. The ref can be
 | Platform             | Runner             | Assets                    |
 | -------------------- | ------------------ | ------------------------- |
 | Ubuntu Desktop ARM64 | `ubuntu-24.04-arm` | `.deb`                    |
+| Ubuntu Desktop x86_64 | `ubuntu-24.04`    | `.deb`                    |
 | Windows x64          | `windows-latest`   | `.msi`, NSIS `-setup.exe` |
 | macOS ARM64          | Authorized Mac     | notarized `.app.zip`      |
 
 The repository variable `WINDOWS_SIGNING_MODE` makes Windows release intent explicit. Set it to `signpath` for SignPath Foundation Authenticode signing, or temporarily to `unsigned` while the OSS application is under review. Unsigned release notes always disclose the warning. Manual `windows` builds remain unsigned short-lived Actions artifacts and never update a GitHub Release.
 
-Ubuntu repository metadata is signed by the dedicated SyncHalo APT key. The private key is stored only as an encrypted local backup and GitHub Actions secrets; GitHub Pages contains the public key, signed metadata, and the current ARM64 DEB. The public ASCII key, Deb822 source, restricted update helper, and Polkit policy are embedded in every DEB. The desktop process remains unprivileged; after explicit confirmation, `pkexec` authorizes only `/usr/lib/synchalo/update-synchalo`, which validates a bounded version and asks APT to install exactly `sync-halo=<version>` from the signed source. The DEB post-install migration removes the exact legacy `synchalo.list` created by older official instructions, but preserves any customized file. The release build verifies that this pinned public key matches the private release key. A downloaded standalone DEB can still be described as an unknown source during that first installation; subsequent APT metadata and packages are authenticated by the enrolled source.
+Ubuntu repository metadata is signed by the dedicated SyncHalo APT key. The private key is stored only as an encrypted local backup and GitHub Actions secrets; GitHub Pages contains the public key, signed metadata, and current ARM64/amd64 DEBs. The public ASCII key, dual-architecture Deb822 source, restricted update helper, and Polkit policy are embedded in every DEB. The desktop process remains unprivileged; after explicit confirmation, `pkexec` authorizes only `/usr/lib/synchalo/update-synchalo`, which validates a bounded version and asks APT to install exactly `sync-halo=<version>` for the installed architecture from the signed source. The DEB post-install migration removes the exact legacy `synchalo.list` created by older official instructions, but preserves any customized file. The release build requires both architectures and verifies that the pinned public key matches the private release key. A downloaded standalone DEB can still be described as an unknown source during that first installation; subsequent APT metadata and packages are authenticated by the enrolled source.
 
 ## Required GitHub Secrets
 
@@ -92,7 +93,7 @@ Trigger the release:
 scripts/release-all.sh 0.1.7
 ```
 
-For a faster non-publishing platform build, open **Actions → Publish Linux and Windows Release → Run workflow**, set `ref` to `main` (or another branch, tag, or commit), then choose `linux`, `windows`, or `validate-only`. Choose `all` only with a matching version tag when the manual run should create or update the complete GitHub Release.
+For a faster non-publishing platform build, open **Actions → Publish Linux and Windows Release → Run workflow**, set `ref` to `main` (or another branch, tag, or commit), then choose `linux`, `windows`, or `validate-only`. The `linux` target builds both Ubuntu architectures in parallel. Choose `all` only with a matching version tag when the manual run should create or update the complete GitHub Release.
 
 The scripts require a clean `main` branch that exactly matches `origin/main`. `release-all.sh` creates and pushes the annotated version tag, starts the Linux/Windows workflow, builds macOS locally in parallel, waits for GitHub and SignPath approval, uploads macOS, and verifies remote asset digests. When the Windows job shows a pending SignPath request, an authorized maintainer must review and approve it in SignPath before the one-hour workflow timeout. Alternatively, run **Publish Linux and Windows Release** from the Actions page and provide a source ref plus target.
 

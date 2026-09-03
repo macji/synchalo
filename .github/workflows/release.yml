@@ -214,10 +214,24 @@ jobs:
       - run: tests/release/apt_repository_smoke.sh
 
   build-linux:
-    name: Build Ubuntu ARM64
+    name: Build Ubuntu ${{ matrix.display_arch }}
     needs: [metadata, preflight]
     if: needs.metadata.outputs.target == 'all' || needs.metadata.outputs.target == 'linux'
-    runs-on: ubuntu-24.04-arm
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - display_arch: ARM64
+            os: ubuntu-24.04-arm
+            rust_target: aarch64-unknown-linux-gnu
+            deb_arch: arm64
+            asset_arch: arm64
+          - display_arch: x86_64
+            os: ubuntu-24.04
+            rust_target: x86_64-unknown-linux-gnu
+            deb_arch: amd64
+            asset_arch: x64
+    runs-on: ${{ matrix.os }}
     env:
       RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
     steps:
@@ -244,39 +258,40 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-unknown-linux-gnu
+          targets: ${{ matrix.rust_target }}
 
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
-          key: release-ubuntu-arm64
+          key: release-ubuntu-${{ matrix.deb_arch }}
 
       - run: npm ci
 
       - name: Build Ubuntu bundles
         run: >-
           npm run tauri -- build
-          --target aarch64-unknown-linux-gnu
+          --target ${{ matrix.rust_target }}
           --bundles deb
 
       - name: Verify and package Linux artifacts
         shell: bash
         run: |
           set -euo pipefail
-          bundle_root="target/aarch64-unknown-linux-gnu/release/bundle"
+          bundle_root="target/${{ matrix.rust_target }}/release/bundle"
           deb="$(find "$bundle_root/deb" -maxdepth 1 -type f -name '*.deb' -print -quit)"
           test -n "$deb"
 
           dpkg-deb --info "$deb" >/dev/null
+          test "$(dpkg-deb -f "$deb" Architecture)" = "${{ matrix.deb_arch }}"
           tests/release/deb_apt_bootstrap_smoke.sh "$deb"
 
           mkdir -p release-assets
           install -m 0644 "$deb" \
-            "release-assets/SyncHalo_${RELEASE_VERSION}_ubuntu-arm64.deb"
+            "release-assets/SyncHalo_${RELEASE_VERSION}_ubuntu-${{ matrix.asset_arch }}.deb"
 
       - uses: actions/upload-artifact@v7
         with:
-          name: release-linux-arm64
+          name: release-linux-${{ matrix.deb_arch }}
           path: release-assets/*
           if-no-files-found: error
           retention-days: 7
@@ -466,8 +481,9 @@ jobs:
 
       - uses: actions/download-artifact@v8
         with:
-          name: release-linux-arm64
+          pattern: release-linux-*
           path: linux-assets
+          merge-multiple: true
 
       - name: Install APT repository tools
         run: |
@@ -554,7 +570,7 @@ jobs:
 
           Platform packages:
 
-          - Ubuntu Desktop ARM64: DEB with automatic signed APT enrollment and signed APT repository
+          - Ubuntu Desktop ARM64 and x86_64: DEB with automatic signed APT enrollment and signed APT repository
           - Windows x64: MSI and NSIS setup executable (${windows_status})
 
           Signed updater artifacts are included for Windows installations. Ubuntu confirms updates in-app, then installs through Polkit-authorized APT.
