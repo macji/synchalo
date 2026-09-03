@@ -6,11 +6,12 @@ import { ModalDialog } from "./ModalDialog";
 
 interface UpdateDialogProps {
   status: UpdateStatusView | null;
-  onClose: () => void;
+  onDismiss: () => void;
+  onIgnore: () => void;
   onInstall: () => void;
 }
 
-export function UpdateDialog({ status, onClose, onInstall }: UpdateDialogProps) {
+export function UpdateDialog({ status, onDismiss, onIgnore, onInstall }: UpdateDialogProps) {
   const primaryActionRef = useRef<HTMLButtonElement>(null);
 
   if (!status || (status.state !== "available" && status.state !== "ready")) return null;
@@ -21,8 +22,12 @@ export function UpdateDialog({ status, onClose, onInstall }: UpdateDialogProps) 
     <ModalDialog
       actions={
         <>
-          <button className="button button--secondary" onClick={onClose} type="button">
-            {downloaded ? "稍后" : "取消"}
+          <button
+            className="button button--secondary"
+            onClick={downloaded ? onDismiss : onIgnore}
+            type="button"
+          >
+            {downloaded ? "稍后" : "忽略此版本"}
           </button>
           <button
             className="button button--primary"
@@ -37,7 +42,7 @@ export function UpdateDialog({ status, onClose, onInstall }: UpdateDialogProps) 
       }
       className="update-dialog"
       initialFocusRef={primaryActionRef}
-      onClose={onClose}
+      onClose={onDismiss}
       title={downloaded ? "更新已下载" : "发现新版本"}
     >
       <div className="update-hero">

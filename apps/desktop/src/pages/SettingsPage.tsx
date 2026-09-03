@@ -40,11 +40,13 @@ interface SettingsPageProps {
   onCopyCode: (code: string) => void;
   onJoin: (code: string) => void;
   onCheckForUpdates: () => Promise<void>;
+  onRefreshDevices: () => void;
   onUpdate: (patch: SettingsPatch) => void;
   onSelectDirectory: () => void;
   onOpenDirectory: () => void;
   onPauseDevice: (device: DeviceView, paused: boolean) => void;
   onRevoke: (device: DeviceView) => void;
+  refreshingDevices: boolean;
 }
 
 const retentionOptions: Array<[HistoryRetention, string]> = [
@@ -65,11 +67,13 @@ export function SettingsPage({
   onCopyCode,
   onJoin,
   onCheckForUpdates,
+  onRefreshDevices,
   onUpdate,
   onSelectDirectory,
   onOpenDirectory,
   onPauseDevice,
   onRevoke,
+  refreshingDevices,
 }: SettingsPageProps) {
   const [joinCode, setJoinCode] = useState("");
   const [clock, setClock] = useState(() => Date.now());
@@ -136,7 +140,22 @@ export function SettingsPage({
           </div>
         </SettingsSection>
 
-        <SettingsSection title="我的设备">
+        <SettingsSection
+          action={
+            <IconButton
+              disabled={refreshingDevices}
+              icon={
+                <RefreshCw
+                  className={refreshingDevices ? "loading-spinner" : undefined}
+                  size={15}
+                />
+              }
+              label="刷新局域网设备"
+              onClick={onRefreshDevices}
+            />
+          }
+          title="我的设备"
+        >
           <DeviceGroup
             devices={online}
             label="在线"
@@ -315,11 +334,20 @@ export function SettingsPage({
   );
 }
 
-function SettingsSection({ title, children }: { title: string; children: ReactNode }) {
+function SettingsSection({
+  title,
+  action,
+  children,
+}: {
+  title: string;
+  action?: ReactNode;
+  children: ReactNode;
+}) {
   return (
     <section className="settings-section">
       <div className="section-intro">
         <h2>{title}</h2>
+        {action}
       </div>
       <div className="section-content">{children}</div>
     </section>

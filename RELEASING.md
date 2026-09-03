@@ -83,13 +83,13 @@ Keep these versions identical before tagging:
 Commit and push the version change, then validate without creating a tag:
 
 ```bash
-scripts/release.sh 0.1.4 --dry-run
+scripts/release.sh 0.1.5 --dry-run
 ```
 
 Trigger the release:
 
 ```bash
-scripts/release-all.sh 0.1.4
+scripts/release-all.sh 0.1.5
 ```
 
 For a faster non-publishing platform build, open **Actions → Publish Linux and Windows Release → Run workflow**, set `ref` to `main` (or another branch, tag, or commit), then choose `linux`, `windows`, or `validate-only`. Choose `all` only with a matching version tag when the manual run should create or update the complete GitHub Release.
@@ -98,6 +98,6 @@ The scripts require a clean `main` branch that exactly matches `origin/main`. `r
 
 ## Automatic Updates
 
-The public repository exposes `https://github.com/macji/synchalo/releases/latest/download/latest.json`. Production builds check this manifest about five seconds after startup and every 30 minutes afterward, and Settings provides a manual check. When automatic updates are disabled, the app shows the version and release notes before downloading. When enabled, it downloads and verifies into a private temporary file, then waits for explicit “Install and restart” confirmation. Concurrent operations are collapsed into one, and cached bytes are digest-checked again before installation. macOS and Windows restart after confirmation; Linux in-app installation is available only for AppImage launches. DEB installations update through the signed APT source or manual package installation. Windows updater signatures are regenerated after SignPath because Authenticode changes the installer bytes.
+The public repository exposes `https://github.com/macji/synchalo/releases/latest/download/latest.json`. Production builds check this manifest about five seconds after startup and every 30 minutes afterward, and Settings provides a manual check. When automatic updates are disabled, the app shows the version and release notes before downloading; users can install or persistently ignore that exact version, and a later version restores reminders. When enabled, it downloads and verifies into a private temporary file, then waits for explicit “Install and restart” confirmation. Concurrent operations are collapsed into one, and cached bytes are digest-checked again before installation. macOS and Windows restart after confirmation; Linux in-app installation is available only for AppImage launches. DEB installations update through the signed APT source or manual package installation. Windows updater signatures are regenerated after SignPath because Authenticode changes the installer bytes.
 
 References: [GitHub Releases access](https://docs.github.com/en/repositories/releasing-projects-on-github/about-releases), [Tauri GitHub pipeline](https://v2.tauri.app/distribute/pipelines/github/).

@@ -138,6 +138,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_app_state,
+            commands::refresh_devices,
             commands::list_clipboard_history,
             commands::list_file_history,
             commands::copy_history_item,
@@ -155,6 +156,7 @@ pub fn run() {
             commands::update_settings,
             commands::check_for_updates,
             commands::install_update,
+            commands::ignore_update,
             commands::select_receive_directory,
             commands::select_files,
             commands::paste_files,
@@ -191,12 +193,13 @@ fn start_automatic_update(
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            let automatic_download = runtime.settings().automatic_updates_enabled;
+            let settings = runtime.settings();
             let _ = run_update_check(
                 app.clone(),
                 coordinator.clone(),
                 UpdateTrigger::Automatic,
-                automatic_download,
+                settings.automatic_updates_enabled,
+                settings.ignored_update_version.as_deref(),
             )
             .await;
         }
@@ -207,6 +210,7 @@ pub(crate) async fn check_for_updates_manually(
     app: AppHandle,
     coordinator: Arc<UpdateCoordinator>,
     automatic_download: bool,
+    ignored_update_version: Option<&str>,
 ) -> UpdateStatus {
     if cfg!(debug_assertions) {
         return emit_update_status(
@@ -220,7 +224,14 @@ pub(crate) async fn check_for_updates_manually(
             UpdateStatus::message("unsupported", "DEB 安装请通过 APT 检查和安装更新。"),
         );
     }
-    run_update_check(app, coordinator, UpdateTrigger::Manual, automatic_download).await
+    run_update_check(
+        app,
+        coordinator,
+        UpdateTrigger::Manual,
+        automatic_download,
+        ignored_update_version,
+    )
+    .await
 }
 
 async fn run_update_check(
@@ -228,6 +239,7 @@ async fn run_update_check(
     coordinator: Arc<UpdateCoordinator>,
     trigger: UpdateTrigger,
     automatic_download: bool,
+    ignored_update_version: Option<&str>,
 ) -> UpdateStatus {
     let Some(_permit) = coordinator.try_acquire() else {
         let status = UpdateStatus::message("busy", "正在检查或安装更新，请稍候。");
@@ -259,6 +271,13 @@ async fn run_update_check(
         let status = UpdateStatus::message("upToDate", "当前已是最新版本。");
         return emit_for_trigger(&app, trigger, status);
     };
+
+    if is_ignored_update(ignored_update_version, &update.version) {
+        coordinator.pending.lock().await.take();
+        let status = UpdateStatus::from_update("ignored", &update)
+            .with_message("这个版本已被忽略，将在更高版本发布后再次提醒。");
+        return emit_for_trigger(&app, trigger, status);
+    }
 
     let version = update.version.clone();
     if let Some(PendingUpdate::Ready(prepared)) = coordinator.pending.lock().await.take()
@@ -451,6 +470,41 @@ pub(crate) async fn install_pending_update(
     app.restart()
 }
 
+pub(crate) async fn ignore_pending_update(
+    app: AppHandle,
+    coordinator: Arc<UpdateCoordinator>,
+    runtime: Arc<AppRuntime>,
+    version: String,
+) -> Result<UpdateStatus, synchalo_core::AppError> {
+    let Some(_permit) = coordinator.try_acquire() else {
+        return Err(synchalo_core::AppError::Internal(
+            "an update operation is already in progress".to_owned(),
+        ));
+    };
+    let pending_version = coordinator
+        .pending
+        .lock()
+        .await
+        .as_ref()
+        .map(PendingUpdate::version);
+    if pending_version.as_deref() != Some(version.as_str()) {
+        return Err(synchalo_core::AppError::InvalidInput(
+            "the requested update is no longer pending".to_owned(),
+        ));
+    }
+    coordinator.pending.lock().await.take();
+    runtime.ignore_update_version(version.clone())?;
+    Ok(emit_update_status(
+        &app,
+        UpdateStatus {
+            state: "ignored",
+            version: Some(version),
+            notes: None,
+            message: Some("已忽略这个版本；有更高版本时会再次提醒。".to_owned()),
+        },
+    ))
+}
+
 async fn read_prepared_update(prepared: &PreparedUpdate) -> Result<Vec<u8>, String> {
     let file = prepared
         .package
@@ -541,6 +595,15 @@ impl UpdateStatus {
     }
 }
 
+impl PendingUpdate {
+    fn version(&self) -> String {
+        match self {
+            Self::Available(update) => update.version.clone(),
+            Self::Ready(prepared) => prepared.update.version.clone(),
+        }
+    }
+}
+
 impl PrepareUpdateError {
     fn new(update: Update, message: String) -> Self {
         Self {
@@ -556,6 +619,10 @@ fn bounded_update_notes(notes: &str) -> Option<String> {
         return None;
     }
     Some(notes.chars().take(MAX_UPDATE_NOTES_CHARS).collect())
+}
+
+fn is_ignored_update(ignored_version: Option<&str>, available_version: &str) -> bool {
+    ignored_version == Some(available_version)
 }
 
 #[cfg(test)]
@@ -594,5 +661,12 @@ mod tests {
                 .count(),
             MAX_UPDATE_NOTES_CHARS
         );
+    }
+
+    #[test]
+    fn ignored_update_only_suppresses_the_exact_version() {
+        assert!(is_ignored_update(Some("0.1.5"), "0.1.5"));
+        assert!(!is_ignored_update(Some("0.1.5"), "0.1.6"));
+        assert!(!is_ignored_update(None, "0.1.5"));
     }
 }

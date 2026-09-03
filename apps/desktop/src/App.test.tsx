@@ -70,7 +70,7 @@ describe("SyncHalo shell", () => {
     await waitFor(() => expect(joinDialog).not.toBeInTheDocument());
   });
 
-  it("shows release notes and waits for confirmation when automatic updates are off", async () => {
+  it("shows release notes and allows updating or ignoring when automatic updates are off", async () => {
     const check = vi.spyOn(api, "checkForUpdates").mockResolvedValue({
       state: "available",
       version: "0.1.4",
@@ -82,6 +82,12 @@ describe("SyncHalo shell", () => {
       version: "0.1.4",
       notes: null,
       message: null,
+    });
+    const ignore = vi.spyOn(api, "ignoreUpdate").mockResolvedValue({
+      state: "ignored",
+      version: "0.1.4",
+      notes: null,
+      message: "已忽略这个版本；有更高版本时会再次提醒。",
     });
 
     render(<App />);
@@ -95,14 +101,14 @@ describe("SyncHalo shell", () => {
     const dialog = await screen.findByRole("dialog", { name: "发现新版本" });
     expect(within(dialog).getByText("SyncHalo 0.1.4")).toBeInTheDocument();
     expect(within(dialog).getByText(/改进更新提醒/)).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "立即更新" })).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: "取消" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "立即更新" }));
+    await waitFor(() => expect(install).toHaveBeenCalledOnce());
     await waitFor(() => expect(dialog).not.toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "检查更新" }));
     const reopened = await screen.findByRole("dialog", { name: "发现新版本" });
-    fireEvent.click(within(reopened).getByRole("button", { name: "立即更新" }));
-    await waitFor(() => expect(install).toHaveBeenCalledOnce());
+    fireEvent.click(within(reopened).getByRole("button", { name: "忽略此版本" }));
+    await waitFor(() => expect(ignore).toHaveBeenCalledWith("0.1.4"));
     expect(check).toHaveBeenCalledTimes(2);
   });
 
@@ -283,6 +289,30 @@ describe("SyncHalo shell", () => {
     expect(screen.queryByRole("button", { name: /粘贴并同步/ })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "v", metaKey: true });
     expect(await screen.findByText("clipboard-file.zip")).toBeInTheDocument();
+  });
+
+  it("refreshes LAN discovery from both device sections and applies online results", async () => {
+    const snapshot = await api.getAppState();
+    const refreshedDevices = snapshot.devices.map((device) =>
+      device.name === "Office Ubuntu"
+        ? { ...device, connectionState: "online" as const, address: "192.168.1.44:53317" }
+        : device,
+    );
+    const refresh = vi.spyOn(api, "refreshDevices").mockResolvedValue(refreshedDevices);
+
+    render(<App />);
+    await screen.findByRole("heading", { name: "粘贴板历史" });
+    fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
+    const initiallyOffline = screen.getByRole("button", { name: /Office Ubuntu/ });
+    expect(initiallyOffline).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "刷新局域网设备" }));
+    await waitFor(() => expect(refresh).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByRole("button", { name: /Office Ubuntu/ })).toBeEnabled());
+    expect(await screen.findByText(/局域网设备已刷新/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /设置/ }));
+    fireEvent.click(screen.getByRole("button", { name: "刷新局域网设备" }));
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(2));
   });
 
   it("paginates file history 100 items per page and returns to the top", async () => {

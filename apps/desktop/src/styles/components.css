@@ -706,11 +706,22 @@
   letter-spacing: -0.01em;
 }
 
-.files-panel-heading > small {
-  padding-top: 12px;
+.files-panel-heading > .files-panel-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.files-panel-tools small {
   color: var(--text-tertiary);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
+}
+
+.files-panel-tools .icon-button,
+.section-intro .icon-button {
+  width: 28px;
+  height: 28px;
 }
 
 .sync-device-list {
@@ -1169,6 +1180,13 @@ button.sync-device-row.is-selected {
   border-bottom: 1px solid var(--border);
   grid-template-columns: 128px minmax(0, 1fr);
   gap: 20px;
+}
+
+.section-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .section-intro h2 {

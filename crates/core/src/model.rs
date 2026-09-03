@@ -214,6 +214,8 @@ pub struct SettingsView {
     pub notifications_enabled: bool,
     #[serde(default = "default_true")]
     pub automatic_updates_enabled: bool,
+    #[serde(default)]
+    pub ignored_update_version: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -351,5 +353,27 @@ mod tests {
         assert!(!settings.delete_sync_enabled);
         assert!(!settings.favorite_sync_enabled);
         assert!(settings.automatic_updates_enabled);
+        assert_eq!(settings.ignored_update_version, None);
+    }
+
+    #[test]
+    fn ignored_update_version_round_trips_with_settings() {
+        let settings: SettingsView = serde_json::from_str(
+            r#"{
+                "deviceName": "Mac",
+                "receiveDirectory": "/tmp",
+                "historyRetention": "sevenDays",
+                "launchAtStartup": false,
+                "keepInTray": true,
+                "notificationsEnabled": true,
+                "automaticUpdatesEnabled": false,
+                "ignoredUpdateVersion": "0.1.5"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(settings.ignored_update_version.as_deref(), Some("0.1.5"));
+        let serialized = serde_json::to_value(settings).unwrap();
+        assert_eq!(serialized["ignoredUpdateVersion"], "0.1.5");
     }
 }

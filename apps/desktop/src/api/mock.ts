@@ -198,6 +198,7 @@ export const mockSnapshot: AppSnapshot = {
     keepInTray: true,
     notificationsEnabled: true,
     automaticUpdatesEnabled: true,
+    ignoredUpdateVersion: null,
   },
   pairingCode: null,
   capabilities: {

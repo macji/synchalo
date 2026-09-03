@@ -111,6 +111,7 @@ export interface SettingsView {
   keepInTray: boolean;
   notificationsEnabled: boolean;
   automaticUpdatesEnabled: boolean;
+  ignoredUpdateVersion: string | null;
 }
 
 export type SettingsPatch = Partial<SettingsView>;
@@ -164,6 +165,7 @@ export interface UpdateStatusView {
     | "ready"
     | "installing"
     | "installed"
+    | "ignored"
     | "error"
     | "unsupported"
     | "busy";

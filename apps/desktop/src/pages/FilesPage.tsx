@@ -49,6 +49,7 @@ interface FilesPageProps {
   totalItems: number;
   totalPages: number;
   targetIds: string[] | null;
+  refreshingDevices: boolean;
   onTargetIdsChange: (ids: string[]) => void;
   onNoTargets: () => void;
   onClear: () => void;
@@ -64,6 +65,7 @@ interface FilesPageProps {
     filter: TransferHistoryFilter,
     page: number,
   ) => void;
+  onRefreshDevices: () => void;
   onRetry: (id: string) => void;
   onCancel: (id: string) => void;
   onDelete: (id: string) => void;
@@ -84,6 +86,7 @@ export function FilesPage({
   totalItems,
   totalPages,
   targetIds,
+  refreshingDevices,
   onTargetIdsChange,
   onNoTargets,
   onClear,
@@ -94,6 +97,7 @@ export function FilesPage({
   onResync,
   onPinnedChange,
   onRequestPage,
+  onRefreshDevices,
   onRetry,
   onCancel,
   onDelete,
@@ -226,7 +230,20 @@ export function FilesPage({
               <div>
                 <h2 id="sync-devices-title">我的设备</h2>
               </div>
-              <small>{devices.length} 台</small>
+              <div className="files-panel-tools">
+                <small>{devices.length} 台</small>
+                <IconButton
+                  disabled={refreshingDevices}
+                  icon={
+                    <RefreshCw
+                      className={refreshingDevices ? "loading-spinner" : undefined}
+                      size={15}
+                    />
+                  }
+                  label="刷新局域网设备"
+                  onClick={onRefreshDevices}
+                />
+              </div>
             </header>
 
             <div className="sync-device-list">

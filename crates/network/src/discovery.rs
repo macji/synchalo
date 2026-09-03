@@ -250,6 +250,24 @@ mod tests {
         assert_eq!(observe_pairing_state(device_id, false), initial_fullname);
     }
 
+    #[test]
+    fn discovery_service_can_restart_with_the_same_identity() {
+        let device_id = Uuid::new_v4();
+        let config = DiscoveryConfig {
+            device_id,
+            device_name: "Restart test".to_owned(),
+            platform: DevicePlatform::current(),
+            port: 53_328,
+            pairing_open: false,
+        };
+        let first_fullname = {
+            let _service = DiscoveryService::start(config.clone()).unwrap();
+            observe_pairing_state(device_id, false)
+        };
+        let _service = DiscoveryService::start(config).unwrap();
+        assert_eq!(observe_pairing_state(device_id, false), first_fullname);
+    }
+
     fn observe_pairing_state(device_id: Uuid, expected: bool) -> String {
         let observer = ServiceDaemon::new().unwrap();
         let events = observer.browse(SERVICE_TYPE).unwrap();

@@ -82,6 +82,10 @@ def main() -> None:
         assert page.locator(".files-page .page-header").get_by_placeholder("搜索历史").is_visible()
         assert page.locator(".files-page .segmented-control").count() == 0
         assert page.get_by_role("heading", name="我的设备").is_visible()
+        files_refresh = page.get_by_role("button", name="刷新局域网设备")
+        assert files_refresh.is_visible()
+        files_refresh.click()
+        page.get_by_text(re.compile(r"^局域网设备已刷新")).wait_for()
         assert page.get_by_text("已完成", exact=True).count() == 0
         first_device = page.locator(".sync-device-row").first
         assert first_device.get_by_text("Jason 的 MacBook Air").is_visible()
@@ -140,6 +144,10 @@ def main() -> None:
         page.get_by_role("button", name="设置 ⌘,").click()
         page.get_by_role("heading", name="设置").wait_for()
         assert page.get_by_text("我的设备").is_visible()
+        settings_refresh = page.get_by_role("button", name="刷新局域网设备")
+        assert settings_refresh.is_visible()
+        settings_refresh.click()
+        page.get_by_text(re.compile(r"^局域网设备已刷新")).wait_for()
         assert page.get_by_text("同步与历史").is_visible()
         assert page.get_by_text("粘贴板与历史").count() == 0
         assert page.get_by_text("自动同步粘贴板").count() == 0
@@ -205,7 +213,10 @@ def main() -> None:
         assert available_dialog.get_by_text("更新提醒支持发布说明", exact=False).is_visible()
         assert available_dialog.get_by_role("button", name="立即更新").is_visible()
         page.screenshot(path=ARTIFACTS / "update-available-light.png", full_page=True)
-        available_dialog.get_by_role("button", name="取消").click()
+        assert available_dialog.get_by_role("button", name="忽略此版本").is_visible()
+        available_dialog.get_by_role("button", name="忽略此版本").click()
+        page.get_by_role("button", name="检查更新").click()
+        page.get_by_text("这个版本已被忽略，将在更高版本发布后再次提醒。").wait_for()
 
         page.goto(f"{BASE_URL}?mockUpdate=ready")
         page.wait_for_load_state("networkidle")

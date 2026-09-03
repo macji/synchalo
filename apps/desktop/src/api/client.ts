@@ -91,6 +91,11 @@ export const api = {
     return snapshot;
   },
 
+  async refreshDevices(): Promise<DeviceView[]> {
+    if (isTauri) return command("refresh_devices");
+    return structuredClone(mock.devices);
+  },
+
   async listClipboardHistory(
     query = "",
     favoritesOnly = false,
@@ -242,6 +247,14 @@ export const api = {
     if (isTauri) return command("check_for_updates");
     const mockUpdate = new URLSearchParams(window.location.search).get("mockUpdate");
     if (mockUpdate === "available" || mockUpdate === "ready") {
+      if (mock.settings.ignoredUpdateVersion === "0.1.5") {
+        return {
+          state: "ignored",
+          version: "0.1.5",
+          notes: null,
+          message: "这个版本已被忽略，将在更高版本发布后再次提醒。",
+        };
+      }
       return {
         state: mockUpdate,
         version: "0.1.5",
@@ -264,6 +277,17 @@ export const api = {
       version: desktopPackage.version,
       notes: null,
       message: null,
+    };
+  },
+
+  async ignoreUpdate(version: string): Promise<UpdateStatusView> {
+    if (isTauri) return command("ignore_update", { version });
+    mock.settings.ignoredUpdateVersion = version;
+    return {
+      state: "ignored",
+      version,
+      notes: null,
+      message: "已忽略这个版本；有更高版本时会再次提醒。",
     };
   },
 

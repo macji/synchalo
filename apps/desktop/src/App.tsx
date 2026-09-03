@@ -39,6 +39,7 @@ export default function App() {
   const [updatePrompt, setUpdatePrompt] = useState<UpdateStatusView | null>(null);
   const [fileTargetIds, setFileTargetIds] = useState<string[] | null>(null);
   const [nativeFileDragging, setNativeFileDragging] = useState(false);
+  const [refreshingDevices, setRefreshingDevices] = useState(false);
   const [fileView, setFileView] = useState<{
     query: string;
     favoritesOnly: boolean;
@@ -133,7 +134,12 @@ export default function App() {
         pushToast({ message: "正在安装更新并准备重新启动…", tone: "info" }, 60_000);
       } else if (status.state === "installed") {
         pushToast({ message: "更新已安装，正在重新启动…", tone: "success" }, 10_000);
-      } else if (status.state === "unsupported" || status.state === "busy") {
+      } else if (
+        status.state === "unsupported" ||
+        status.state === "busy" ||
+        status.state === "ignored"
+      ) {
+        if (status.state === "ignored") setUpdatePrompt(null);
         pushToast({ message: status.message ?? "当前无法检查更新。", tone: "info" }, 6_000);
       } else {
         pushToast({
@@ -172,6 +178,39 @@ export default function App() {
       reportError(error);
     }
   }, [presentUpdateStatus, reportError]);
+
+  const ignoreUpdate = useCallback(async () => {
+    const version = updatePrompt?.version;
+    setUpdatePrompt(null);
+    if (!version) return;
+    try {
+      const status = await api.ignoreUpdate(version);
+      if (!api.isTauri) presentUpdateStatus(status);
+    } catch (error) {
+      reportError(error);
+    }
+  }, [presentUpdateStatus, reportError, updatePrompt?.version]);
+
+  const refreshDevices = useCallback(async () => {
+    setRefreshingDevices(true);
+    try {
+      const devices = await api.refreshDevices();
+      deviceOfflineDebouncer.update(devices);
+      const onlineCount = devices.filter(
+        (device) => !device.isCurrent && device.connectionState === "online",
+      ).length;
+      pushToast({
+        message: onlineCount
+          ? `局域网设备已刷新，${onlineCount} 台设备在线`
+          : "局域网设备已刷新，暂未发现其他在线设备",
+        tone: onlineCount ? "success" : "info",
+      });
+    } catch (error) {
+      reportError(error);
+    } finally {
+      setRefreshingDevices(false);
+    }
+  }, [deviceOfflineDebouncer, pushToast, reportError]);
 
   const showNoSyncDevices = useCallback(() => {
     pushToast({ message: NO_SYNC_DEVICES_MESSAGE, tone: "warning" }, 6_000);
@@ -541,6 +580,7 @@ export default function App() {
           onRequestPage={(query, favoritesOnly, filter, page) => {
             void loadFilePage(query, favoritesOnly, filter, page);
           }}
+          onRefreshDevices={() => void refreshDevices()}
           onResync={async (transfer, targetIds) => {
             try {
               const transfers = await api.resyncTransfer(transfer.id, targetIds);
@@ -575,6 +615,7 @@ export default function App() {
           page={fileView.page}
           pageSize={fileView.pageSize}
           pairingCode={snapshot.pairingCode}
+          refreshingDevices={refreshingDevices}
           targetIds={fileTargetIds}
           totalItems={snapshot.fileHistoryTotal}
           totalPages={fileView.totalPages}
@@ -626,6 +667,7 @@ export default function App() {
             pushToast({ message: value ? `已暂停向 ${device.name} 同步` : `已恢复向 ${device.name} 同步`, tone: "info" });
           }).catch(reportError);
         }}
+        onRefreshDevices={() => void refreshDevices()}
         onRevoke={(device) => setConfirm({
           title: `撤销 ${device.name}？`,
           body: "该设备将立即失去同步权限；已经保存在双方设备上的文件和历史不会被删除。",
@@ -646,6 +688,7 @@ export default function App() {
         }).catch(reportError)}
         onUpdate={(patch) => void updateSettings(patch)}
         pairingCode={snapshot.pairingCode}
+        refreshingDevices={refreshingDevices}
         settings={snapshot.settings}
       />
     );
@@ -689,6 +732,8 @@ export default function App() {
     paused,
     presentUpdateStatus,
     pushToast,
+    refreshDevices,
+    refreshingDevices,
     reportError,
     reportQueuedFiles,
     route,
@@ -733,7 +778,8 @@ export default function App() {
       <ToastRegion onDismiss={dismissToast} toasts={toasts} />
       <ConfirmDialog onClose={() => setConfirm(null)} state={confirm} />
       <UpdateDialog
-        onClose={() => setUpdatePrompt(null)}
+        onDismiss={() => setUpdatePrompt(null)}
+        onIgnore={() => void ignoreUpdate()}
         onInstall={() => void installUpdate()}
         status={updatePrompt}
       />

@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -55,6 +55,7 @@ const SECURE_STORAGE_SERVICE: &str = "io.synchalo.desktop";
 const KEY_ENCRYPTION_KEY_ACCOUNT: &str = "local-key-encryption-key-v1";
 const LEGACY_DATA_KEY_ACCOUNT: &str = "local-data-key";
 const TRANSPORT_CREDENTIALS_ACCOUNT: &str = "transport-credentials-v1";
+const DEVICE_REFRESH_SETTLE_TIME: Duration = Duration::from_millis(900);
 
 struct KeyBootstrap {
     key_encryption_key: Zeroizing<[u8; 32]>,
@@ -78,6 +79,8 @@ pub struct AppRuntime {
     transport_port: u16,
     nearby: RwLock<HashMap<Uuid, DiscoveredPeer>>,
     discovery: Mutex<Option<DiscoveryService>>,
+    discovery_generation: AtomicU64,
+    device_refresh_in_progress: AtomicBool,
     clipboard: Mutex<Option<ClipboardMonitor>>,
     transfer_tasks: Mutex<HashMap<(Uuid, Uuid), tokio::task::AbortHandle>>,
     seen_clipboard_events: Mutex<HashSet<Uuid>>,
@@ -136,6 +139,7 @@ impl AppRuntime {
             keep_in_tray: true,
             notifications_enabled: true,
             automatic_updates_enabled: true,
+            ignored_update_version: None,
         };
         let mut settings = database.load_settings(defaults)?;
         if enforce_notifications_enabled(&mut settings) {
@@ -178,6 +182,8 @@ impl AppRuntime {
             transport_port,
             nearby: RwLock::new(HashMap::new()),
             discovery: Mutex::new(None),
+            discovery_generation: AtomicU64::new(0),
+            device_refresh_in_progress: AtomicBool::new(false),
             clipboard: Mutex::new(None),
             transfer_tasks: Mutex::new(HashMap::new()),
             seen_clipboard_events: Mutex::new(HashSet::new()),
@@ -190,7 +196,9 @@ impl AppRuntime {
         tauri::async_runtime::spawn(async move { transport.run().await });
         runtime.start_transport_events(transport_events);
         runtime.start_clipboard();
-        runtime.start_discovery();
+        if let Err(error) = runtime.start_discovery() {
+            runtime.emit_error(error);
+        }
         Ok(runtime)
     }
 
@@ -941,6 +949,48 @@ impl AppRuntime {
         self.settings.read().clone()
     }
 
+    pub fn ignore_update_version(&self, version: String) -> Result<SettingsView, AppError> {
+        let version = version.trim();
+        if version.is_empty()
+            || version.len() > 64
+            || !version
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || ".-+".contains(character))
+        {
+            return Err(AppError::InvalidInput(
+                "ignored update version is invalid".to_owned(),
+            ));
+        }
+        let updated = {
+            let mut settings = self.settings.write();
+            settings.ignored_update_version = Some(version.to_owned());
+            self.database.save_settings(&settings)?;
+            settings.clone()
+        };
+        let _ = self.app.emit(EVENT_SETTINGS_CHANGED, &updated);
+        Ok(updated)
+    }
+
+    pub async fn refresh_devices(self: &Arc<Self>) -> Result<Vec<DeviceView>, AppError> {
+        if self
+            .device_refresh_in_progress
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return self.devices();
+        }
+        let _refresh_guard = DeviceRefreshGuard(&self.device_refresh_in_progress);
+
+        self.discovery_generation.fetch_add(1, Ordering::AcqRel);
+        let previous_discovery = self.discovery.lock().take();
+        drop(previous_discovery);
+        self.nearby.write().clear();
+        self.emit_devices();
+        self.start_discovery()?;
+        tokio::time::sleep(DEVICE_REFRESH_SETTLE_TIME).await;
+        self.devices()
+    }
+
     pub fn app_handle(&self) -> &AppHandle {
         &self.app
     }
@@ -1520,64 +1570,64 @@ impl AppRuntime {
         }
     }
 
-    fn start_discovery(self: &Arc<Self>) {
+    fn start_discovery(self: &Arc<Self>) -> Result<(), AppError> {
         let identity = self.identity.read().clone();
         let config = DiscoveryConfig {
             device_id: identity.device_id,
             device_name: identity.display_name,
             platform: synchalo_core::DevicePlatform::current(),
             port: self.transport_port,
-            pairing_open: false,
+            pairing_open: self.pairing.current().is_some(),
         };
-        match DiscoveryService::start(config) {
-            Ok(mut discovery) => {
-                let mut events = discovery
-                    .take_events()
-                    .expect("discovery events are available once");
-                *self.discovery.lock() = Some(discovery);
-                let runtime = self.clone();
-                tauri::async_runtime::spawn(async move {
-                    while let Some(event) = events.recv().await {
-                        match event {
-                            DiscoveryEvent::Resolved(peer) => {
-                                let peer_id = peer.device_id;
-                                let address = peer.address;
-                                let should_connect =
-                                    runtime.transport.trusted_peer(peer_id).is_some()
-                                        && !runtime.transport.online_peer_ids().contains(&peer_id)
-                                        && runtime.should_initiate_connection(peer_id)
-                                        && peer.protocol_version == synchalo_core::PROTOCOL_VERSION;
-                                runtime.nearby.write().insert(peer_id, peer);
-                                runtime.emit_devices();
-                                if should_connect {
-                                    let connect_runtime = runtime.clone();
-                                    tauri::async_runtime::spawn(async move {
-                                        if let Err(error) = connect_runtime
-                                            .transport
-                                            .connect_trusted(peer_id, address)
-                                            .await
-                                        {
-                                            connect_runtime.handle_reconnect_error(peer_id, error);
-                                        }
-                                    });
+        let mut discovery = DiscoveryService::start(config)?;
+        let mut events = discovery
+            .take_events()
+            .expect("discovery events are available once");
+        *self.discovery.lock() = Some(discovery);
+        let generation = self.discovery_generation.fetch_add(1, Ordering::AcqRel) + 1;
+        let runtime = self.clone();
+        tauri::async_runtime::spawn(async move {
+            while let Some(event) = events.recv().await {
+                if runtime.discovery_generation.load(Ordering::Acquire) != generation {
+                    break;
+                }
+                match event {
+                    DiscoveryEvent::Resolved(peer) => {
+                        let peer_id = peer.device_id;
+                        let address = peer.address;
+                        let should_connect = runtime.transport.trusted_peer(peer_id).is_some()
+                            && !runtime.transport.online_peer_ids().contains(&peer_id)
+                            && runtime.should_initiate_connection(peer_id)
+                            && peer.protocol_version == synchalo_core::PROTOCOL_VERSION;
+                        runtime.nearby.write().insert(peer_id, peer);
+                        runtime.emit_devices();
+                        if should_connect {
+                            let connect_runtime = runtime.clone();
+                            tauri::async_runtime::spawn(async move {
+                                if let Err(error) = connect_runtime
+                                    .transport
+                                    .connect_trusted(peer_id, address)
+                                    .await
+                                {
+                                    connect_runtime.handle_reconnect_error(peer_id, error);
                                 }
-                            }
-                            DiscoveryEvent::Removed { fullname } => {
-                                runtime
-                                    .nearby
-                                    .write()
-                                    .retain(|_, peer| peer.fullname != fullname);
-                                runtime.emit_devices();
-                            }
-                            DiscoveryEvent::Error(message) => {
-                                runtime.emit_error(AppError::Network(message));
-                            }
+                            });
                         }
                     }
-                });
+                    DiscoveryEvent::Removed { fullname } => {
+                        runtime
+                            .nearby
+                            .write()
+                            .retain(|_, peer| peer.fullname != fullname);
+                        runtime.emit_devices();
+                    }
+                    DiscoveryEvent::Error(message) => {
+                        runtime.emit_error(AppError::Network(message));
+                    }
+                }
             }
-            Err(error) => self.emit_error(error),
-        }
+        });
+        Ok(())
     }
 
     fn emit_devices(&self) {
@@ -1593,6 +1643,14 @@ impl AppRuntime {
         tracing::warn!(%error, "user-facing runtime error");
         let error = UserFacingError::from(error);
         let _ = self.app.emit(EVENT_USER_ERROR, error);
+    }
+}
+
+struct DeviceRefreshGuard<'a>(&'a AtomicBool);
+
+impl Drop for DeviceRefreshGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Release);
     }
 }
 
@@ -1920,6 +1978,7 @@ mod tests {
             keep_in_tray: true,
             notifications_enabled: false,
             automatic_updates_enabled: true,
+            ignored_update_version: None,
         };
         assert!(enforce_notifications_enabled(&mut settings));
         assert!(settings.notifications_enabled);
@@ -1938,6 +1997,7 @@ mod tests {
             keep_in_tray: true,
             notifications_enabled: true,
             automatic_updates_enabled: true,
+            ignored_update_version: None,
         };
         let delete = HistoryMutation::Delete {
             item_kind: HistoryItemKind::Clipboard,

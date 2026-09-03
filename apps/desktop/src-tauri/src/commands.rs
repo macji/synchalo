@@ -1,9 +1,9 @@
 use std::{path::PathBuf, sync::Arc};
 
 use synchalo_core::{
-    AppSnapshot, ClipboardHistoryPage, ClipboardItemView, PairingCodeView, SettingsPatch,
-    SettingsView, SyncStatusView, TransferHistoryFilter, TransferHistoryPage, TransferView,
-    UserFacingError,
+    AppSnapshot, ClipboardHistoryPage, ClipboardItemView, DeviceView, PairingCodeView,
+    SettingsPatch, SettingsView, SyncStatusView, TransferHistoryFilter, TransferHistoryPage,
+    TransferView, UserFacingError,
 };
 use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_autostart::ManagerExt as _;
@@ -12,8 +12,8 @@ use tauri_plugin_opener::OpenerExt as _;
 use uuid::Uuid;
 
 use crate::{
-    UpdateCoordinator, UpdateStatus, check_for_updates_manually, install_pending_update,
-    runtime::AppRuntime,
+    UpdateCoordinator, UpdateStatus, check_for_updates_manually, ignore_pending_update,
+    install_pending_update, runtime::AppRuntime,
 };
 
 type CommandResult<T> = Result<T, UserFacingError>;
@@ -21,6 +21,16 @@ type CommandResult<T> = Result<T, UserFacingError>;
 #[tauri::command]
 pub async fn get_app_state(state: State<'_, Arc<AppRuntime>>) -> CommandResult<AppSnapshot> {
     state.snapshot().map_err(Into::into)
+}
+
+#[tauri::command]
+pub async fn refresh_devices(state: State<'_, Arc<AppRuntime>>) -> CommandResult<Vec<DeviceView>> {
+    state
+        .inner()
+        .clone()
+        .refresh_devices()
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]
@@ -182,10 +192,12 @@ pub async fn check_for_updates(
     coordinator: State<'_, Arc<UpdateCoordinator>>,
     runtime: State<'_, Arc<AppRuntime>>,
 ) -> CommandResult<UpdateStatus> {
+    let settings = runtime.settings();
     Ok(check_for_updates_manually(
         app,
         coordinator.inner().clone(),
-        runtime.settings().automatic_updates_enabled,
+        settings.automatic_updates_enabled,
+        settings.ignored_update_version.as_deref(),
     )
     .await)
 }
@@ -196,6 +208,23 @@ pub async fn install_update(
     coordinator: State<'_, Arc<UpdateCoordinator>>,
 ) -> CommandResult<UpdateStatus> {
     Ok(install_pending_update(app, coordinator.inner().clone()).await)
+}
+
+#[tauri::command]
+pub async fn ignore_update(
+    app: AppHandle,
+    coordinator: State<'_, Arc<UpdateCoordinator>>,
+    runtime: State<'_, Arc<AppRuntime>>,
+    version: String,
+) -> CommandResult<UpdateStatus> {
+    ignore_pending_update(
+        app,
+        coordinator.inner().clone(),
+        runtime.inner().clone(),
+        version,
+    )
+    .await
+    .map_err(Into::into)
 }
 
 #[tauri::command]
