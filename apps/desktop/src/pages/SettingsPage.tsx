@@ -31,6 +31,7 @@ import { Switch } from "../components/Switch";
 import { formatRelative } from "../lib/format";
 
 interface SettingsPageProps {
+  appVersion: string | null;
   settings: SettingsView;
   devices: DeviceView[];
   pairingCode: PairingCodeView | null;
@@ -54,6 +55,7 @@ const retentionOptions: Array<[HistoryRetention, string]> = [
 ];
 
 export function SettingsPage({
+  appVersion,
   settings,
   devices,
   pairingCode,
@@ -230,7 +232,7 @@ export function SettingsPage({
           </SettingRow>
         </SettingsSection>
 
-        <p className="version-line">SyncHalo 0.1.1</p>
+        <p className="version-line">SyncHalo{appVersion ? ` ${appVersion}` : ""}</p>
       </div>
 
       {joinDialogOpen ? (

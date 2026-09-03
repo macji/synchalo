@@ -1,7 +1,9 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 
+import desktopPackage from "../../package.json";
 import { cloneMockSnapshot, makeMockTransfer } from "./mock";
 import type {
   AppSnapshot,
@@ -73,6 +75,10 @@ function normalizeError(error: unknown): UserFacingError {
 
 export const api = {
   isTauri,
+
+  async getAppVersion(): Promise<string> {
+    return isTauri ? getVersion() : desktopPackage.version;
+  },
 
   async getAppState(): Promise<AppSnapshot> {
     if (isTauri) return command("get_app_state");

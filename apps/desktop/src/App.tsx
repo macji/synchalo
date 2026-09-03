@@ -24,6 +24,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 
 export default function App() {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
   const [deviceOfflineDebouncer] = useState(
     () => new DeviceOfflineDebouncer((devices) => {
       setSnapshot((current) => current ? withDevices(current, devices) : current);
@@ -269,6 +270,9 @@ export default function App() {
       .catch((error) => {
         if (alive) setFatalError(normalizeError(error));
       });
+    api.getAppVersion().then((version) => {
+      if (alive) setAppVersion(version);
+    }).catch(reportError);
 
     const register = async () => {
       unlisteners.push(
@@ -534,6 +538,7 @@ export default function App() {
     }
     return (
       <SettingsPage
+        appVersion={appVersion}
         capabilities={snapshot.capabilities}
         devices={snapshot.devices}
         onCopyCode={() => {
@@ -619,6 +624,7 @@ export default function App() {
       }
     }
   }, [
+    appVersion,
     clipboardView,
     enqueueFilePaths,
     fileTargetIds,

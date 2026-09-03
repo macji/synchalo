@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it } from "vitest";
 
+import desktopPackage from "../package.json";
 import App from "./App";
 
 describe("SyncHalo shell", () => {
@@ -31,6 +32,7 @@ describe("SyncHalo shell", () => {
     expect(screen.queryByText("自动同步粘贴板")).not.toBeInTheDocument();
     expect(screen.queryByText("平台能力")).not.toBeInTheDocument();
     expect(screen.queryByText(/Protocol v1/i)).not.toBeInTheDocument();
+    expect(await screen.findByText(`SyncHalo ${desktopPackage.version}`)).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "删除同步" })).not.toBeChecked();
     expect(screen.getByRole("switch", { name: "收藏同步" })).not.toBeChecked();
     fireEvent.click(screen.getByRole("switch", { name: "删除同步" }));
