@@ -191,7 +191,8 @@ export const mockSnapshot: AppSnapshot = {
   settings: {
     deviceName: "Jason 的 MacBook Air",
     receiveDirectory: "~/Downloads",
-    clipboardSyncEnabled: true,
+    deleteSyncEnabled: false,
+    favoriteSyncEnabled: false,
     historyRetention: "sevenDays",
     launchAtStartup: false,
     keepInTray: true,

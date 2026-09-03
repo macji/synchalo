@@ -204,7 +204,10 @@ pub enum HistoryRetention {
 pub struct SettingsView {
     pub device_name: String,
     pub receive_directory: String,
-    pub clipboard_sync_enabled: bool,
+    #[serde(default)]
+    pub delete_sync_enabled: bool,
+    #[serde(default)]
+    pub favorite_sync_enabled: bool,
     pub history_retention: HistoryRetention,
     pub launch_at_startup: bool,
     pub keep_in_tray: bool,
@@ -216,7 +219,8 @@ pub struct SettingsView {
 pub struct SettingsPatch {
     pub device_name: Option<String>,
     pub receive_directory: Option<String>,
-    pub clipboard_sync_enabled: Option<bool>,
+    pub delete_sync_enabled: Option<bool>,
+    pub favorite_sync_enabled: Option<bool>,
     pub history_retention: Option<HistoryRetention>,
     pub launch_at_startup: Option<bool>,
     pub keep_in_tray: Option<bool>,
@@ -277,6 +281,39 @@ pub struct ClipboardEvent {
     pub content_hash: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HistoryItemKind {
+    Clipboard,
+    Transfer,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum HistoryMutation {
+    Delete {
+        item_kind: HistoryItemKind,
+        item_id: Uuid,
+    },
+    SetPinned {
+        item_kind: HistoryItemKind,
+        item_id: Uuid,
+        pinned: bool,
+    },
+    RestoreClipboard {
+        item: ClipboardItemView,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryMutationEvent {
+    pub id: Uuid,
+    pub space_id: Uuid,
+    pub origin_device_id: Uuid,
+    pub mutation: HistoryMutation,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,5 +324,24 @@ mod tests {
 
         assert_eq!(state, TransferState::Failed);
         assert_eq!(serde_json::to_string(&state).unwrap(), "\"failed\"");
+    }
+
+    #[test]
+    fn history_sync_settings_default_to_disabled_for_existing_installations() {
+        let settings: SettingsView = serde_json::from_str(
+            r#"{
+                "deviceName": "Mac",
+                "receiveDirectory": "/tmp",
+                "clipboardSyncEnabled": true,
+                "historyRetention": "sevenDays",
+                "launchAtStartup": false,
+                "keepInTray": true,
+                "notificationsEnabled": true
+            }"#,
+        )
+        .unwrap();
+
+        assert!(!settings.delete_sync_enabled);
+        assert!(!settings.favorite_sync_enabled);
     }
 }

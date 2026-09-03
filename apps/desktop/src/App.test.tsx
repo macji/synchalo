@@ -26,6 +26,19 @@ describe("SyncHalo shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /设置/ }));
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
     expect(screen.getByText("我的设备")).toBeInTheDocument();
+    expect(screen.getByText("同步与历史")).toBeInTheDocument();
+    expect(screen.queryByText("粘贴板与历史")).not.toBeInTheDocument();
+    expect(screen.queryByText("自动同步粘贴板")).not.toBeInTheDocument();
+    expect(screen.queryByText("平台能力")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Protocol v1/i)).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: "删除同步" })).not.toBeChecked();
+    expect(screen.getByRole("switch", { name: "收藏同步" })).not.toBeChecked();
+    fireEvent.click(screen.getByRole("switch", { name: "删除同步" }));
+    fireEvent.click(screen.getByRole("switch", { name: "收藏同步" }));
+    await waitFor(() => {
+      expect(screen.getByRole("switch", { name: "删除同步" })).toBeChecked();
+      expect(screen.getByRole("switch", { name: "收藏同步" })).toBeChecked();
+    });
     for (const removedDescription of [
       "用一次性短码把同一局域网内的设备加入你的同步空间。",
       "只有这里列出的可信设备可以接收内容。",

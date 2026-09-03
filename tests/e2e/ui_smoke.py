@@ -135,6 +135,14 @@ def main() -> None:
         page.get_by_role("button", name="设置 ⌘,").click()
         page.get_by_role("heading", name="设置").wait_for()
         assert page.get_by_text("我的设备").is_visible()
+        assert page.get_by_text("同步与历史").is_visible()
+        assert page.get_by_text("粘贴板与历史").count() == 0
+        assert page.get_by_text("自动同步粘贴板").count() == 0
+        assert page.get_by_text("平台能力").count() == 0
+        assert page.get_by_text(re.compile(r"Protocol v1", re.IGNORECASE)).count() == 0
+        assert not page.get_by_role("switch", name="删除同步").is_checked()
+        assert not page.get_by_role("switch", name="收藏同步").is_checked()
+        assert page.get_by_text("SyncHalo 0.1.1", exact=True).is_visible()
         page.get_by_text("482 913").wait_for()
         assert page.locator(".section-intro p").count() == 0
         assert page.get_by_text("传输完成与错误通知").count() == 0

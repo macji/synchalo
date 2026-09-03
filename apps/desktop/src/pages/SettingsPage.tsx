@@ -158,9 +158,12 @@ export function SettingsPage({
           </SettingRow>
         </SettingsSection>
 
-        <SettingsSection title="粘贴板与历史">
-          <SettingRow description="监听纯文本变化并同步给在线可信设备。" label="自动同步粘贴板">
-            <Switch checked={settings.clipboardSyncEnabled} label="自动同步粘贴板" onChange={(value) => onUpdate({ clipboardSyncEnabled: value })} />
+        <SettingsSection title="同步与历史">
+          <SettingRow description="开启后，此设备发送并接收单条历史的删除与撤销。" label="删除同步">
+            <Switch checked={settings.deleteSyncEnabled} label="删除同步" onChange={(value) => onUpdate({ deleteSyncEnabled: value })} />
+          </SettingRow>
+          <SettingRow description="开启后，此设备发送并接收收藏状态变更。" label="收藏同步">
+            <Switch checked={settings.favoriteSyncEnabled} label="收藏同步" onChange={(value) => onUpdate({ favoriteSyncEnabled: value })} />
           </SettingRow>
           <SettingRow description="收藏条目不受自动清理影响。" label="保存历史">
             <label className="select-control">
@@ -225,15 +228,9 @@ export function SettingsPage({
               </>
             )}
           </SettingRow>
-          <SettingRow label="平台能力">
-            <span className="setting-value">{platformLabel(capabilities.platform)} · {capabilities.architecture}</span>
-            <span className={`capability-badge capability-badge--${capabilities.clipboard}`}>
-              {capabilityLabel(capabilities.clipboard)}
-            </span>
-          </SettingRow>
         </SettingsSection>
 
-        <p className="version-line">SyncHalo 0.1.0 · Protocol v1</p>
+        <p className="version-line">SyncHalo 0.1.1</p>
       </div>
 
       {joinDialogOpen ? (
@@ -385,13 +382,4 @@ function formatPairingInput(value: string): string {
 
 function platformLabel(platform: DevicePlatform): string {
   return platform === "macos" ? "macOS" : platform === "linux" ? "Ubuntu / Linux" : "未知平台";
-}
-
-function capabilityLabel(capability: PlatformCapabilitiesView["clipboard"]): string {
-  return {
-    full: "完整后台同步",
-    appActiveOnly: "仅 App 活跃时",
-    manual: "需要手动同步",
-    unsupported: "不支持后台同步",
-  }[capability];
 }

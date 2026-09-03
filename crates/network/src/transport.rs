@@ -17,7 +17,8 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use sha2::Sha256;
 use spake2::{Ed25519Group, Identity, Password, Spake2};
 use synchalo_core::{
-    AppError, ClipboardEvent, DevicePlatform, MAX_CLIPBOARD_BYTES, PROTOCOL_VERSION, content_hash,
+    AppError, ClipboardEvent, DevicePlatform, HistoryMutation, HistoryMutationEvent,
+    MAX_CLIPBOARD_BYTES, PROTOCOL_VERSION, content_hash,
 };
 use synchalo_transfer::{
     FileManifest, TRANSFER_CHUNK_BYTES, prepare_incoming, verify_and_commit_incoming,
@@ -122,6 +123,10 @@ pub enum TransportEvent {
     ClipboardReceived {
         from_device_id: Uuid,
         event: ClipboardEvent,
+    },
+    HistoryMutationReceived {
+        from_device_id: Uuid,
+        event: HistoryMutationEvent,
     },
     IncomingFileStarted {
         from_device_id: Uuid,
@@ -433,6 +438,40 @@ impl LanTransport {
             .signing_key()
             .sign(&clipboard_signing_bytes(&event)?);
         let message = WireFrame::Clipboard {
+            event,
+            signature: signature.to_bytes().to_vec(),
+        };
+        if let Err(error) = send_application_message(&connection, &message).await {
+            self.inner.connections.write().remove(&peer_id);
+            let _ = self
+                .inner
+                .events_tx
+                .send(TransportEvent::PeerOffline { device_id: peer_id });
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    pub async fn send_history_mutation_to(
+        &self,
+        peer_id: Uuid,
+        event: HistoryMutationEvent,
+    ) -> Result<(), AppError> {
+        let connection = self
+            .inner
+            .connections
+            .read()
+            .get(&peer_id)
+            .cloned()
+            .ok_or_else(|| AppError::Network("target device is offline".to_owned()))?;
+        let signature = self
+            .inner
+            .identity
+            .read()
+            .credentials
+            .signing_key()
+            .sign(&history_mutation_signing_bytes(&event)?);
+        let message = WireFrame::HistoryMutation {
             event,
             signature: signature.to_bytes().to_vec(),
         };
@@ -854,6 +893,41 @@ impl LanTransport {
                 send.finish().map_err(network_error)?;
                 Ok(())
             }
+            WireFrame::HistoryMutation { event, signature } => {
+                if event.origin_device_id != peer_id {
+                    return Err(protocol_error(
+                        "history mutation origin does not match connection",
+                    ));
+                }
+                if event.space_id != self.inner.identity.read().space_id {
+                    return Err(protocol_error("history mutation sync space does not match"));
+                }
+                if let HistoryMutation::RestoreClipboard { item } = &event.mutation
+                    && (item.content.is_empty()
+                        || item.content.len() > MAX_CLIPBOARD_BYTES
+                        || content_hash(item.content.as_bytes()) != item.content_hash)
+                {
+                    return Err(protocol_error("restored clipboard payload is invalid"));
+                }
+                let peer = self
+                    .trusted_peer(peer_id)
+                    .ok_or_else(|| AppError::Network("device is no longer trusted".to_owned()))?;
+                verify_signature(
+                    &peer.verifying_key,
+                    &history_mutation_signing_bytes(&event)?,
+                    &signature,
+                )?;
+                let _ = self
+                    .inner
+                    .events_tx
+                    .send(TransportEvent::HistoryMutationReceived {
+                        from_device_id: peer_id,
+                        event,
+                    });
+                write_frame(&mut send, &WireFrame::Ack).await?;
+                send.finish().map_err(network_error)?;
+                Ok(())
+            }
             WireFrame::FileOffer { manifest } => {
                 self.receive_file(peer_id, manifest, send, recv).await
             }
@@ -1100,6 +1174,10 @@ enum WireFrame {
         event: ClipboardEvent,
         signature: Vec<u8>,
     },
+    HistoryMutation {
+        event: HistoryMutationEvent,
+        signature: Vec<u8>,
+    },
     FileOffer {
         manifest: FileManifest,
     },
@@ -1318,6 +1396,10 @@ fn clipboard_signing_bytes(event: &ClipboardEvent) -> Result<Vec<u8>, AppError> 
     serde_json::to_vec(&("synchalo-clipboard-v1", event)).map_err(network_error)
 }
 
+fn history_mutation_signing_bytes(event: &HistoryMutationEvent) -> Result<Vec<u8>, AppError> {
+    serde_json::to_vec(&("synchalo-history-mutation-v1", event)).map_err(network_error)
+}
+
 fn verify_signature(key: &[u8; 32], message: &[u8], signature: &[u8]) -> Result<(), AppError> {
     let key = VerifyingKey::from_bytes(key)
         .map_err(|_| AppError::Network("invalid device verification key".to_owned()))?;
@@ -1472,6 +1554,43 @@ mod tests {
                 .unwrap();
             if let TransportEvent::ClipboardReceived { event, .. } = received {
                 assert_eq!(event.content, text);
+                break;
+            }
+        }
+
+        let item_id = Uuid::now_v7();
+        let mutation = HistoryMutationEvent {
+            id: Uuid::now_v7(),
+            space_id: server_space,
+            origin_device_id: client_id,
+            mutation: HistoryMutation::SetPinned {
+                item_kind: synchalo_core::HistoryItemKind::Clipboard,
+                item_id,
+                pinned: true,
+            },
+        };
+        client
+            .send_history_mutation_to(server_id, mutation)
+            .await
+            .unwrap();
+        loop {
+            let received = timeout(Duration::from_secs(3), server_events.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            if let TransportEvent::HistoryMutationReceived { event, .. } = received {
+                match event.mutation {
+                    HistoryMutation::SetPinned {
+                        item_kind,
+                        item_id: received_item_id,
+                        pinned,
+                    } => {
+                        assert_eq!(item_kind, synchalo_core::HistoryItemKind::Clipboard);
+                        assert_eq!(received_item_id, item_id);
+                        assert!(pinned);
+                    }
+                    other => panic!("expected pin mutation, got {other:?}"),
+                }
                 break;
             }
         }

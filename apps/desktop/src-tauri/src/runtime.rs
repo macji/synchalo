@@ -14,10 +14,11 @@ use parking_lot::{Mutex, RwLock};
 use synchalo_core::{
     AppError, AppSnapshot, CLIPBOARD_PAGE_SIZE, ClipboardDirection, ClipboardEvent,
     ClipboardHistoryPage, ClipboardItemView, DeviceConnectionState, DeviceView,
-    FILE_HISTORY_PAGE_SIZE, HistoryRetention, HlcTimestamp, PairingCodeView, PairingRequestView,
-    SettingsPatch, SettingsView, SyncState, SyncStatusView, TransferDirection,
-    TransferHistoryFilter, TransferHistoryPage, TransferState, TransferTargetView, TransferView,
-    UserFacingError, content_hash,
+    FILE_HISTORY_PAGE_SIZE, HistoryItemKind, HistoryMutation, HistoryMutationEvent,
+    HistoryRetention, HlcTimestamp, PairingCodeView, PairingRequestView, SettingsPatch,
+    SettingsView, SyncState, SyncStatusView, TransferDirection, TransferHistoryFilter,
+    TransferHistoryPage, TransferState, TransferTargetView, TransferView, UserFacingError,
+    content_hash,
 };
 use synchalo_network::{
     DEFAULT_QUIC_PORT, DiscoveredPeer, DiscoveryConfig, DiscoveryEvent, DiscoveryService,
@@ -40,6 +41,7 @@ use zeroize::Zeroizing;
 
 pub const EVENT_CLIPBOARD_ADDED: &str = "synchalo://clipboard-added";
 pub const EVENT_CLIPBOARD_DELETED: &str = "synchalo://clipboard-deleted";
+pub const EVENT_HISTORY_CHANGED: &str = "synchalo://history-changed";
 pub const EVENT_DEVICES_CHANGED: &str = "synchalo://devices-changed";
 pub const EVENT_PAIRING_CODE_CHANGED: &str = "synchalo://pairing-code-changed";
 pub const EVENT_PAIRING_REQUESTED: &str = "synchalo://pairing-requested";
@@ -127,7 +129,8 @@ impl AppRuntime {
         let defaults = SettingsView {
             device_name: identity.display_name.clone(),
             receive_directory: default_receive_directory().to_string_lossy().into_owned(),
-            clipboard_sync_enabled: true,
+            delete_sync_enabled: false,
+            favorite_sync_enabled: false,
             history_retention: HistoryRetention::SevenDays,
             launch_at_startup: false,
             keep_in_tray: true,
@@ -384,7 +387,7 @@ impl AppRuntime {
             )?;
             let _ = self.app.emit(EVENT_CLIPBOARD_ADDED, &item);
         }
-        if settings.clipboard_sync_enabled && !self.paused.load(Ordering::Relaxed) {
+        if !self.paused.load(Ordering::Relaxed) {
             let transport = self.transport.clone();
             let target_ids: Vec<_> = self
                 .database
@@ -418,6 +421,12 @@ impl AppRuntime {
         let deleted = self.database.delete_clipboard_item(id)?;
         if deleted {
             let _ = self.app.emit(EVENT_CLIPBOARD_DELETED, id);
+            if self.settings.read().delete_sync_enabled {
+                self.broadcast_history_mutation(HistoryMutation::Delete {
+                    item_kind: HistoryItemKind::Clipboard,
+                    item_id: id,
+                });
+            }
         }
         Ok(deleted)
     }
@@ -427,12 +436,25 @@ impl AppRuntime {
     }
 
     pub fn database_set_clipboard_pinned(&self, id: Uuid, pinned: bool) -> Result<bool, AppError> {
-        self.database.set_clipboard_pinned(id, pinned)
+        let changed = self.database.set_clipboard_pinned(id, pinned)?;
+        if changed && self.settings.read().favorite_sync_enabled {
+            self.broadcast_history_mutation(HistoryMutation::SetPinned {
+                item_kind: HistoryItemKind::Clipboard,
+                item_id: id,
+                pinned,
+            });
+        }
+        Ok(changed)
     }
 
     pub fn restore_clipboard(&self, item: &ClipboardItemView) -> Result<(), AppError> {
         self.database.insert_clipboard_item(item)?;
         let _ = self.app.emit(EVENT_CLIPBOARD_ADDED, item);
+        if self.settings.read().delete_sync_enabled {
+            self.broadcast_history_mutation(HistoryMutation::RestoreClipboard {
+                item: item.clone(),
+            });
+        }
         Ok(())
     }
 
@@ -591,8 +613,11 @@ impl AppRuntime {
             settings.receive_directory = path.to_string_lossy().into_owned();
             self.transport.set_receive_directory(path);
         }
-        if let Some(enabled) = patch.clipboard_sync_enabled {
-            settings.clipboard_sync_enabled = enabled;
+        if let Some(enabled) = patch.delete_sync_enabled {
+            settings.delete_sync_enabled = enabled;
+        }
+        if let Some(enabled) = patch.favorite_sync_enabled {
+            settings.favorite_sync_enabled = enabled;
         }
         if let Some(retention) = patch.history_retention {
             settings.history_retention = retention;
@@ -784,6 +809,13 @@ impl AppRuntime {
         transfer.pinned = pinned;
         self.database.upsert_transfer(&transfer)?;
         let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
+        if self.settings.read().favorite_sync_enabled {
+            self.broadcast_history_mutation(HistoryMutation::SetPinned {
+                item_kind: HistoryItemKind::Transfer,
+                item_id: id,
+                pinned,
+            });
+        }
         Ok(transfer)
     }
 
@@ -881,7 +913,14 @@ impl AppRuntime {
     }
 
     pub fn delete_transfer(&self, id: Uuid) -> Result<bool, AppError> {
-        self.database.delete_transfer(id)
+        let deleted = self.database.delete_transfer(id)?;
+        if deleted && self.settings.read().delete_sync_enabled {
+            self.broadcast_history_mutation(HistoryMutation::Delete {
+                item_kind: HistoryItemKind::Transfer,
+                item_id: id,
+            });
+        }
+        Ok(deleted)
     }
 
     pub fn clear_file_history(&self) -> Result<usize, AppError> {
@@ -963,6 +1002,10 @@ impl AppRuntime {
                         from_device_id,
                         event,
                     } => runtime.apply_remote_clipboard(from_device_id, event),
+                    TransportEvent::HistoryMutationReceived {
+                        from_device_id,
+                        event,
+                    } => runtime.apply_remote_history_mutation(from_device_id, event),
                     TransportEvent::IncomingFileStarted {
                         from_device_id,
                         manifest,
@@ -1159,7 +1202,6 @@ impl AppRuntime {
             }
         };
         if should_apply
-            && settings.clipboard_sync_enabled
             && !self.paused.load(Ordering::Relaxed)
             && let Some(clipboard) = self.clipboard.lock().as_ref()
         {
@@ -1175,6 +1217,98 @@ impl AppRuntime {
             self.database.upsert_device(&device)?;
         }
         Ok(())
+    }
+
+    fn apply_remote_history_mutation(
+        &self,
+        from_device_id: Uuid,
+        event: HistoryMutationEvent,
+    ) -> Result<(), AppError> {
+        if event.origin_device_id != from_device_id {
+            return Err(AppError::Network(
+                "history mutation origin does not match sender".to_owned(),
+            ));
+        }
+        if event.space_id != self.identity.read().space_id {
+            return Err(AppError::Network(
+                "received history mutation for another sync space".to_owned(),
+            ));
+        }
+        if !history_mutation_enabled(&self.settings.read(), &event.mutation) {
+            return Ok(());
+        }
+
+        let changed = match event.mutation {
+            HistoryMutation::Delete { item_kind, item_id } => match item_kind {
+                HistoryItemKind::Clipboard => self.database.delete_clipboard_item(item_id)?,
+                HistoryItemKind::Transfer => self.database.delete_transfer(item_id)?,
+            },
+            HistoryMutation::SetPinned {
+                item_kind,
+                item_id,
+                pinned,
+            } => match item_kind {
+                HistoryItemKind::Clipboard => {
+                    self.database.set_clipboard_pinned(item_id, pinned)?
+                }
+                HistoryItemKind::Transfer => {
+                    if let Some(mut transfer) = self.database.get_transfer(item_id)? {
+                        transfer.pinned = pinned;
+                        self.database.upsert_transfer(&transfer)?;
+                        true
+                    } else {
+                        false
+                    }
+                }
+            },
+            HistoryMutation::RestoreClipboard { mut item } => {
+                item.direction = if item.source_device_id == self.identity.read().device_id {
+                    ClipboardDirection::Local
+                } else {
+                    ClipboardDirection::Received
+                };
+                self.database.insert_clipboard_item(&item)?
+            }
+        };
+        if changed {
+            let _ = self.app.emit(EVENT_HISTORY_CHANGED, ());
+        }
+        Ok(())
+    }
+
+    fn broadcast_history_mutation(&self, mutation: HistoryMutation) {
+        if self.paused.load(Ordering::Relaxed) {
+            return;
+        }
+        let identity = self.identity.read().clone();
+        let target_ids: Vec<_> = match self.database.list_devices() {
+            Ok(devices) => devices
+                .into_iter()
+                .filter(|device| !device.is_current && !device.paused)
+                .map(|device| device.id)
+                .collect(),
+            Err(error) => {
+                tracing::debug!(%error, "could not resolve history mutation targets");
+                return;
+            }
+        };
+        let event = HistoryMutationEvent {
+            id: Uuid::now_v7(),
+            space_id: identity.space_id,
+            origin_device_id: identity.device_id,
+            mutation,
+        };
+        let transport = self.transport.clone();
+        tauri::async_runtime::spawn(async move {
+            for peer_id in target_ids {
+                if let Err(error) = transport
+                    .send_history_mutation_to(peer_id, event.clone())
+                    .await
+                {
+                    tracing::debug!(%peer_id, %error, "history mutation delivery failed");
+                }
+            }
+        });
     }
 
     fn record_incoming_file(
@@ -1623,6 +1757,15 @@ fn enforce_notifications_enabled(settings: &mut SettingsView) -> bool {
     changed
 }
 
+fn history_mutation_enabled(settings: &SettingsView, mutation: &HistoryMutation) -> bool {
+    match mutation {
+        HistoryMutation::Delete { .. } | HistoryMutation::RestoreClipboard { .. } => {
+            settings.delete_sync_enabled
+        }
+        HistoryMutation::SetPinned { .. } => settings.favorite_sync_enabled,
+    }
+}
+
 fn validate_receive_directory(value: &str) -> Result<PathBuf, AppError> {
     let path = Path::new(value);
     if !path.is_absolute() {
@@ -1766,7 +1909,8 @@ mod tests {
         let mut settings = SettingsView {
             device_name: "Mac".to_owned(),
             receive_directory: "/tmp".to_owned(),
-            clipboard_sync_enabled: true,
+            delete_sync_enabled: false,
+            favorite_sync_enabled: false,
             history_retention: HistoryRetention::SevenDays,
             launch_at_startup: false,
             keep_in_tray: true,
@@ -1775,6 +1919,36 @@ mod tests {
         assert!(enforce_notifications_enabled(&mut settings));
         assert!(settings.notifications_enabled);
         assert!(!enforce_notifications_enabled(&mut settings));
+    }
+
+    #[test]
+    fn history_mutations_require_the_corresponding_local_opt_in() {
+        let mut settings = SettingsView {
+            device_name: "Mac".to_owned(),
+            receive_directory: "/tmp".to_owned(),
+            delete_sync_enabled: false,
+            favorite_sync_enabled: false,
+            history_retention: HistoryRetention::SevenDays,
+            launch_at_startup: false,
+            keep_in_tray: true,
+            notifications_enabled: true,
+        };
+        let delete = HistoryMutation::Delete {
+            item_kind: HistoryItemKind::Clipboard,
+            item_id: Uuid::nil(),
+        };
+        let favorite = HistoryMutation::SetPinned {
+            item_kind: HistoryItemKind::Clipboard,
+            item_id: Uuid::nil(),
+            pinned: true,
+        };
+
+        assert!(!history_mutation_enabled(&settings, &delete));
+        assert!(!history_mutation_enabled(&settings, &favorite));
+        settings.delete_sync_enabled = true;
+        assert!(history_mutation_enabled(&settings, &delete));
+        settings.favorite_sync_enabled = true;
+        assert!(history_mutation_enabled(&settings, &favorite));
     }
 
     #[test]

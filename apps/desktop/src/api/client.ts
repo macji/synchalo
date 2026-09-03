@@ -330,6 +330,10 @@ export const api = {
     return listenWhenTauri("synchalo://clipboard-deleted", callback);
   },
 
+  async onHistoryChanged(callback: () => void): Promise<Unlisten> {
+    return listenWhenTauri("synchalo://history-changed", callback);
+  },
+
   async onDevicesChanged(callback: (devices: DeviceView[]) => void): Promise<Unlisten> {
     return listenWhenTauri("synchalo://devices-changed", callback);
   },

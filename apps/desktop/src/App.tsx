@@ -274,6 +274,10 @@ export default function App() {
       unlisteners.push(
         await api.onClipboardAdded(() => refreshClipboardRef.current()),
         await api.onClipboardDeleted(() => refreshClipboardRef.current()),
+        await api.onHistoryChanged(() => {
+          refreshClipboardRef.current();
+          refreshFileRef.current();
+        }),
         await api.onDevicesChanged((devices) => deviceOfflineDebouncer.update(devices)),
         await api.onPairingCodeChanged((pairingCode) => setSnapshot((current) => current && { ...current, pairingCode })),
         await api.onPairingRequested((request) => {

@@ -104,7 +104,8 @@ export interface TransferHistoryPage {
 export interface SettingsView {
   deviceName: string;
   receiveDirectory: string;
-  clipboardSyncEnabled: boolean;
+  deleteSyncEnabled: boolean;
+  favoriteSyncEnabled: boolean;
   historyRetention: HistoryRetention;
   launchAtStartup: boolean;
   keepInTray: boolean;
