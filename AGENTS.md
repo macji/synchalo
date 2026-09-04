@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-SyncHalo is a Tauri 2 application. React/TypeScript lives in `apps/desktop/src/`; Tauri commands and runtime code live in `apps/desktop/src-tauri/`. Rust is split across `crates/core`, `network`, `platform`, `storage`, and `transfer`. Tests are in `tests/e2e/`, screenshots in `artifacts/ui/`, packages in `release/`, and specifications in `PRD.md` and `UI-DESIGN.md`.
+SyncHalo is a Tauri 2 application. React/TypeScript lives in `apps/desktop/src/`; Tauri commands and runtime code live in `apps/desktop/src-tauri/`. Rust is split across `crates/core`, `network`, `platform`, `storage`, and `transfer`. Tests are in `tests/e2e/`, screenshots in `artifacts/ui/`, packages in `release/`, and product specifications in `PRD.md`.
 
 Keep private keys, database handles, file bytes, and cryptographic operations in Rust. The WebView should receive only bounded view models and command results.
 

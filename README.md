@@ -1,8 +1,18 @@
 # SyncHalo
 
+[中文介绍](README.zh-CN.md)
+
 SyncHalo is a local-first clipboard and file synchronization tool for devices on the same local network. It requires no account, cloud storage, or public relay and transfers data only between devices that the user explicitly trusts.
 
 [Download the latest release](https://github.com/macji/synchalo/releases/latest) · [APT repository](https://macji.github.io/synchalo/apt) · [Security policy](SECURITY.md) · [Product specification](PRD.md)
+
+## Quick Install with AI
+
+Copy the prompt below into Codex, Claude Code, or another trusted local coding agent. The agent should detect your operating system and architecture, use only official SyncHalo downloads, and verify the package before installation.
+
+```text
+Install the latest stable SyncHalo release from https://github.com/macji/synchalo/releases/latest on this computer. Detect the operating system and CPU architecture first. Use only assets or the signed APT repository published by macji/synchalo, verify the downloaded file against the release SHA-256 checksums, and do not bypass Gatekeeper, SmartScreen, package signatures, or other operating-system security checks. On macOS, install the notarized Apple Silicon app in /Applications. On Ubuntu, install the matching official DEB with APT so the signed SyncHalo repository is enrolled for future updates. On Windows, use the x64 setup executable and tell me before proceeding if its publisher signature cannot be verified. After installation, launch SyncHalo when possible and report the installed version, package source, and verification result.
+```
 
 ## Features
 
@@ -240,7 +250,7 @@ tests/release/           Release and package-repository tests
 packaging/               Linux repository and package assets
 ```
 
-See [PRD.md](PRD.md), [UI-DESIGN.md](UI-DESIGN.md), and [RELEASING.md](RELEASING.md) for the full product, interface, and release documentation.
+See [PRD.md](PRD.md) and [RELEASING.md](RELEASING.md) for the full product and release documentation.
 
 ## Releases
 

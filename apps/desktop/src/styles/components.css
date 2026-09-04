@@ -1,3 +1,130 @@
+.window-titlebar {
+  position: relative;
+  z-index: 50;
+  display: grid;
+  width: 100%;
+  height: var(--window-titlebar-height);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  border-bottom: 1px solid var(--border);
+  background: var(--header-bg);
+  box-shadow: inset 0 1px rgb(255 255 255 / 42%);
+  -webkit-app-region: drag;
+}
+
+.window-titlebar-leading,
+.window-titlebar-main,
+.window-route-title,
+.window-route-title span {
+  -webkit-app-region: drag;
+}
+
+.window-titlebar-leading {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  background: var(--sidebar);
+}
+
+.window-titlebar-main {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  background: var(--header-bg);
+}
+
+.window-route-title {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 640;
+  letter-spacing: -0.01em;
+}
+
+.window-route-title svg {
+  color: var(--text-tertiary);
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls button {
+  display: grid;
+  padding: 0;
+  place-items: center;
+  -webkit-app-region: no-drag;
+}
+
+.window-controls--mac {
+  margin-left: 20px;
+  gap: 10px;
+}
+
+.traffic-light {
+  width: 14px;
+  height: 14px;
+  border: 0.5px solid rgb(0 0 0 / 16%);
+  border-radius: 50%;
+  box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 24%);
+  color: rgb(54 32 24 / 78%);
+}
+
+.traffic-light--close { background: #ff5f57; }
+.traffic-light--minimize { background: #febc2e; }
+.traffic-light--maximize { background: #28c840; }
+
+.traffic-light svg,
+.traffic-light-expand {
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+.window-controls--mac:hover .traffic-light svg,
+.window-controls--mac:hover .traffic-light-expand,
+.traffic-light:focus-visible svg,
+.traffic-light:focus-visible .traffic-light-expand {
+  opacity: 1;
+}
+
+.traffic-light-expand {
+  width: 6px;
+  height: 6px;
+  border: 1px solid rgb(18 72 25 / 78%);
+  border-radius: 1px;
+}
+
+.window-controls--standard {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+}
+
+.window-controls--standard button {
+  width: 46px;
+  height: 100%;
+  background: transparent;
+  color: var(--text-secondary);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.window-controls--standard button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.window-controls--standard .window-control-close:hover {
+  background: #d84b4b;
+  color: #fff;
+}
+
 .sidebar {
   position: relative;
   z-index: 3;

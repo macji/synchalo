@@ -18,6 +18,7 @@ import { HaloMark } from "./components/HaloMark";
 import { Sidebar } from "./components/Sidebar";
 import { ToastRegion, type ToastView } from "./components/ToastRegion";
 import { UpdateDialog } from "./components/UpdateDialog";
+import { WindowTitlebar } from "./components/WindowTitlebar";
 import { localizeError, useI18n } from "./i18n";
 import { DeviceOfflineDebouncer } from "./lib/devicePresence";
 import { ClipboardPage } from "./pages/ClipboardPage";
@@ -782,48 +783,64 @@ export default function App() {
 
   if (fatalError) {
     return (
-      <main className="fatal-screen">
-        <HaloMark size={44} />
-        <AlertTriangle aria-hidden="true" size={24} />
-        <h1>{t("app.fatalTitle")}</h1>
-        <p>{localizeError(fatalError, t)}</p>
-        {fatalError.detail ? <code>{fatalError.detail}</code> : null}
-        <button className="button button--primary" onClick={() => window.location.reload()} type="button">{t("app.retry")}</button>
-      </main>
+      <div className="window-frame">
+        <WindowTitlebar platform={detectWindowPlatform()} route={route} />
+        <main className="fatal-screen">
+          <HaloMark size={44} />
+          <AlertTriangle aria-hidden="true" size={24} />
+          <h1>{t("app.fatalTitle")}</h1>
+          <p>{localizeError(fatalError, t)}</p>
+          {fatalError.detail ? <code>{fatalError.detail}</code> : null}
+          <button className="button button--primary" onClick={() => window.location.reload()} type="button">{t("app.retry")}</button>
+        </main>
+      </div>
     );
   }
 
   if (!snapshot) {
     return (
-      <main className="loading-screen">
-        <HaloMark size={40} />
-        <LoaderCircle className="loading-spinner" size={20} />
-        <span>{t("app.loading")}</span>
-      </main>
+      <div className="window-frame">
+        <WindowTitlebar platform={detectWindowPlatform()} route={route} />
+        <main className="loading-screen">
+          <HaloMark size={40} />
+          <LoaderCircle className="loading-spinner" size={20} />
+          <span>{t("app.loading")}</span>
+        </main>
+      </div>
     );
   }
 
   return (
-    <div className="app-shell" data-route={route}>
-      <Sidebar
-        onNavigate={setRoute}
-        onPause={(value) => void api.pauseSync(value).then((syncStatus) => {
-          setSnapshot((current) => current && { ...current, syncStatus });
-        }).catch(reportError)}
-        route={route}
-        status={snapshot.syncStatus}
-      />
-      <main className="content-pane">{page}</main>
-      <ToastRegion onDismiss={dismissToast} toasts={toasts} />
-      <ConfirmDialog onClose={() => setConfirm(null)} state={confirm} />
-      <UpdateDialog
-        onDismiss={() => setUpdatePrompt(null)}
-        onIgnore={() => void ignoreUpdate()}
-        onInstall={() => void installUpdate()}
-        status={updatePrompt}
-      />
+    <div className="window-frame">
+      <WindowTitlebar platform={snapshot.capabilities.platform} route={route} />
+      <div className="app-shell" data-route={route}>
+        <Sidebar
+          onNavigate={setRoute}
+          onPause={(value) => void api.pauseSync(value).then((syncStatus) => {
+            setSnapshot((current) => current && { ...current, syncStatus });
+          }).catch(reportError)}
+          route={route}
+          status={snapshot.syncStatus}
+        />
+        <main className="content-pane">{page}</main>
+        <ToastRegion onDismiss={dismissToast} toasts={toasts} />
+        <ConfirmDialog onClose={() => setConfirm(null)} state={confirm} />
+        <UpdateDialog
+          onDismiss={() => setUpdatePrompt(null)}
+          onIgnore={() => void ignoreUpdate()}
+          onInstall={() => void installUpdate()}
+          status={updatePrompt}
+        />
+      </div>
     </div>
   );
+}
+
+function detectWindowPlatform(): DeviceView["platform"] {
+  const userAgent = navigator.userAgent.toLowerCase();
+  if (userAgent.includes("mac")) return "macos";
+  if (userAgent.includes("linux")) return "linux";
+  return "unknown";
 }
 
 function withDevices(snapshot: AppSnapshot, devices: DeviceView[]): AppSnapshot {
