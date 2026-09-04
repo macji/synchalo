@@ -1,52 +1,20 @@
-.window-titlebar {
-  position: relative;
+.window-controls-layer {
+  position: absolute;
   z-index: 50;
-  display: grid;
-  width: 100%;
-  height: var(--window-titlebar-height);
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
-  border-bottom: 1px solid var(--border);
-  background: var(--header-bg);
-  box-shadow: inset 0 1px rgb(255 255 255 / 42%);
-  -webkit-app-region: drag;
+  inset: 0;
+  pointer-events: none;
 }
 
-.window-titlebar-leading,
-.window-titlebar-main,
-.window-route-title,
-.window-route-title span {
-  -webkit-app-region: drag;
-}
-
-.window-titlebar-leading {
+.window-drag-region--sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
   display: flex;
-  min-width: 0;
+  width: var(--sidebar-width);
+  height: 52px;
   align-items: center;
-  background: var(--sidebar);
-}
-
-.window-titlebar-main {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  background: var(--header-bg);
-}
-
-.window-route-title {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 9px;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 640;
-  letter-spacing: -0.01em;
-}
-
-.window-route-title svg {
-  color: var(--text-tertiary);
+  pointer-events: auto;
+  -webkit-app-region: drag;
 }
 
 .window-controls {
@@ -104,7 +72,8 @@
   position: absolute;
   top: 0;
   right: 0;
-  height: 100%;
+  height: 46px;
+  pointer-events: auto;
 }
 
 .window-controls--standard button {
@@ -131,8 +100,7 @@
   display: flex;
   min-width: 0;
   min-height: 0;
-  padding: 22px 12px 16px;
-  border-right: 1px solid var(--border);
+  padding: 64px 12px 16px;
   flex-direction: column;
   background: var(--sidebar);
 }
@@ -308,11 +276,26 @@
   display: flex;
   height: var(--header-height);
   padding: 0 24px;
-  border-bottom: 1px solid var(--border);
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  background: var(--header-bg);
+  background: transparent;
+  -webkit-app-region: drag;
+}
+
+.page-header > div:first-child,
+.page-header h1,
+.page-header .page-eyebrow {
+  -webkit-app-region: drag;
+}
+
+.page-actions,
+.page-actions * {
+  -webkit-app-region: no-drag;
+}
+
+.window-frame:not([data-platform="macos"]) .page-header {
+  padding-right: 162px;
 }
 
 .page-header > div:first-child {

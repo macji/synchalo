@@ -1,28 +1,46 @@
-import { Clipboard, Files, Minus, Settings, Square, X } from "lucide-react";
+import { Minus, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { MouseEvent } from "react";
+import { useEffect } from "react";
 
-import type { DevicePlatform, Route } from "../api/types";
+import type { DevicePlatform } from "../api/types";
 import { useI18n } from "../i18n";
+import { runWindowAction } from "../lib/windowControls";
 
 interface WindowTitlebarProps {
   platform: DevicePlatform;
-  route: Route;
 }
 
-export function WindowTitlebar({ platform, route }: WindowTitlebarProps) {
+export function WindowTitlebar({ platform }: WindowTitlebarProps) {
   const { t } = useI18n();
-  const routeMeta = {
-    clipboard: { icon: Clipboard, label: t("sidebar.clipboard") },
-    files: { icon: Files, label: t("sidebar.files") },
-    settings: { icon: Settings, label: t("sidebar.settings") },
-  }[route];
-  const RouteIcon = routeMeta.icon;
   const isMac = platform === "macos";
 
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let alive = true;
+    const updateMaximizedState = async () => {
+      const maximized = "__TAURI_INTERNALS__" in window
+        ? await getCurrentWindow().isMaximized()
+        : false;
+      if (alive) document.documentElement.dataset.windowMaximized = String(maximized);
+    };
+    void updateMaximizedState();
+    if ("__TAURI_INTERNALS__" in window) {
+      void getCurrentWindow().onResized(() => void updateMaximizedState())
+        .then((listener) => {
+          if (alive) unlisten = listener;
+          else listener();
+        });
+    }
+    return () => {
+      alive = false;
+      unlisten?.();
+      delete document.documentElement.dataset.windowMaximized;
+    };
+  }, []);
+
   return (
-    <header className="window-titlebar" data-platform={isMac ? "macos" : "standard"}>
-      <div className="window-titlebar-leading" data-tauri-drag-region>
+    <div className="window-controls-layer" data-platform={isMac ? "macos" : "standard"}>
+      <div className="window-drag-region window-drag-region--sidebar" data-tauri-drag-region>
         {isMac ? (
           <div className="window-controls window-controls--mac">
             <button
@@ -56,18 +74,8 @@ export function WindowTitlebar({ platform, route }: WindowTitlebarProps) {
         ) : null}
       </div>
 
-      <div
-        className="window-titlebar-main"
-        data-tauri-drag-region
-        onDoubleClick={handleTitlebarDoubleClick}
-      >
-        <div className="window-route-title" data-tauri-drag-region>
-          <RouteIcon aria-hidden="true" size={16} strokeWidth={1.8} />
-          <span data-tauri-drag-region>{routeMeta.label}</span>
-        </div>
-
-        {!isMac ? (
-          <div className="window-controls window-controls--standard">
+      {!isMac ? (
+        <div className="window-controls window-controls--standard">
             <button
               aria-label={t("window.minimize")}
               onClick={() => void runWindowAction("minimize")}
@@ -93,22 +101,8 @@ export function WindowTitlebar({ platform, route }: WindowTitlebarProps) {
             >
               <X aria-hidden="true" size={15} />
             </button>
-          </div>
-        ) : null}
-      </div>
-    </header>
+        </div>
+      ) : null}
+    </div>
   );
-}
-
-function handleTitlebarDoubleClick(event: MouseEvent<HTMLDivElement>) {
-  if ((event.target as HTMLElement).closest("button")) return;
-  void runWindowAction("maximize");
-}
-
-async function runWindowAction(action: "close" | "maximize" | "minimize") {
-  if (!("__TAURI_INTERNALS__" in window)) return;
-  const appWindow = getCurrentWindow();
-  if (action === "close") await appWindow.close();
-  else if (action === "minimize") await appWindow.minimize();
-  else await appWindow.toggleMaximize();
 }

@@ -783,8 +783,8 @@ export default function App() {
 
   if (fatalError) {
     return (
-      <div className="window-frame">
-        <WindowTitlebar platform={detectWindowPlatform()} route={route} />
+      <div className="window-frame" data-platform={detectWindowPlatform()}>
+        <WindowTitlebar platform={detectWindowPlatform()} />
         <main className="fatal-screen">
           <HaloMark size={44} />
           <AlertTriangle aria-hidden="true" size={24} />
@@ -799,8 +799,8 @@ export default function App() {
 
   if (!snapshot) {
     return (
-      <div className="window-frame">
-        <WindowTitlebar platform={detectWindowPlatform()} route={route} />
+      <div className="window-frame" data-platform={detectWindowPlatform()}>
+        <WindowTitlebar platform={detectWindowPlatform()} />
         <main className="loading-screen">
           <HaloMark size={40} />
           <LoaderCircle className="loading-spinner" size={20} />
@@ -811,8 +811,8 @@ export default function App() {
   }
 
   return (
-    <div className="window-frame">
-      <WindowTitlebar platform={snapshot.capabilities.platform} route={route} />
+    <div className="window-frame" data-platform={snapshot.capabilities.platform}>
+      <WindowTitlebar platform={snapshot.capabilities.platform} />
       <div className="app-shell" data-route={route}>
         <Sidebar
           onNavigate={setRoute}

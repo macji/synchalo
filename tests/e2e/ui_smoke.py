@@ -31,12 +31,22 @@ def main() -> None:
         page.goto(BASE_URL)
         page.wait_for_load_state("networkidle")
 
-        titlebar = page.locator(".window-titlebar")
-        assert titlebar.is_visible()
-        assert titlebar.get_attribute("data-platform") == "macos"
-        assert titlebar.locator(".traffic-light").count() == 3
-        assert titlebar.get_by_text("粘贴板", exact=True).is_visible()
+        window_controls = page.locator(".window-controls-layer")
+        assert window_controls.is_visible()
+        assert window_controls.get_attribute("data-platform") == "macos"
+        assert window_controls.locator(".traffic-light").count() == 3
+        assert page.locator(".window-titlebar").count() == 0
+        assert page.locator(".window-route-title").count() == 0
+        assert page.locator(".window-frame").evaluate(
+            "element => getComputedStyle(element).borderRadius"
+        ) == "18px"
+        assert page.locator(".sidebar").evaluate(
+            "element => getComputedStyle(element).borderRightStyle"
+        ) == "none"
         page.get_by_role("heading", name="粘贴板历史").wait_for()
+        assert page.locator(".clipboard-page .page-header").evaluate(
+            "element => getComputedStyle(element).borderBottomStyle"
+        ) == "none"
         assert page.get_by_role("navigation", name="主导航").is_visible()
         assert page.locator(".clipboard-page .page-header").get_by_role(
             "button", name="暂停同步"
@@ -86,7 +96,6 @@ def main() -> None:
         page.get_by_text("第 1 / 3 页 · 共 205 条 · 每页 100 条").wait_for()
 
         page.get_by_role("button", name="同步文件 ⌘2").click()
-        assert titlebar.get_by_text("同步文件", exact=True).is_visible()
         page.get_by_role("heading", name="同步文件").wait_for()
         file_actions = page.locator(".files-page .page-actions")
         assert "search-field" in file_actions.locator(":scope > *").first.get_attribute("class")
@@ -153,7 +162,6 @@ def main() -> None:
         assert page.locator(".files-page .page-scroll").evaluate("element => element.scrollTop") == 0
 
         page.get_by_role("button", name="设置 ⌘,").click()
-        assert titlebar.get_by_text("设置", exact=True).is_visible()
         page.get_by_role("heading", name="设置").wait_for()
         language_select = page.locator(".settings-section select").first
         assert language_select.input_value() == "system"
