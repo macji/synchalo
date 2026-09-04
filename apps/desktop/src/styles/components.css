@@ -30,35 +30,6 @@
   -webkit-app-region: no-drag;
 }
 
-.window-controls--mac {
-  margin-left: 20px;
-  gap: 10px;
-}
-
-.traffic-light {
-  width: 14px;
-  height: 14px;
-  border: 0.5px solid rgb(0 0 0 / 16%);
-  border-radius: 50%;
-  box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 24%);
-  color: rgb(25 27 31 / 76%);
-}
-
-.traffic-light--close { background: #ff5f57; }
-.traffic-light--minimize { background: #febc2e; }
-.traffic-light--maximize { background: #28c840; }
-
-.traffic-light > svg {
-  visibility: hidden;
-  opacity: 0;
-  transition: opacity 100ms ease;
-}
-
-.window-controls--mac:hover > .traffic-light > svg {
-  visibility: visible;
-  opacity: 1;
-}
-
 .window-controls--standard {
   position: absolute;
   top: 0;
@@ -91,9 +62,13 @@
   display: flex;
   min-width: 0;
   min-height: 0;
-  padding: 64px 12px 16px;
+  padding: 22px 12px 16px;
   flex-direction: column;
   background: var(--sidebar);
+}
+
+.window-frame[data-platform="macos"] .sidebar {
+  padding-top: 64px;
 }
 
 .brand-block {

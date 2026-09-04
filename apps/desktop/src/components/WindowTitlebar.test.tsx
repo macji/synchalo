@@ -7,9 +7,7 @@ import { WindowTitlebar } from "./WindowTitlebar";
 
 const windowActions = vi.hoisted(() => ({
   close: vi.fn(() => Promise.resolve()),
-  isMaximized: vi.fn(() => Promise.resolve(false)),
   minimize: vi.fn(() => Promise.resolve()),
-  onResized: vi.fn(() => Promise.resolve(vi.fn())),
   toggleMaximize: vi.fn(() => Promise.resolve()),
 }));
 
@@ -31,23 +29,17 @@ describe("WindowTitlebar", () => {
     Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
   });
 
-  it("renders macOS traffic lights and invokes each native window action", async () => {
+  it("leaves macOS traffic lights entirely to the native window", () => {
     const { container } = render(
       <I18nProvider>
         <WindowTitlebar platform="macos" />
       </I18nProvider>,
     );
 
-    expect(container.querySelector(".window-controls--mac")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Close window" }));
-    fireEvent.click(screen.getByRole("button", { name: "Minimize window" }));
-    fireEvent.click(screen.getByRole("button", { name: "Maximize or restore window" }));
-
-    await waitFor(() => {
-      expect(windowActions.close).toHaveBeenCalledOnce();
-      expect(windowActions.minimize).toHaveBeenCalledOnce();
-      expect(windowActions.toggleMaximize).toHaveBeenCalledOnce();
-    });
+    expect(container).toBeEmptyDOMElement();
+    expect(windowActions.close).not.toHaveBeenCalled();
+    expect(windowActions.minimize).not.toHaveBeenCalled();
+    expect(windowActions.toggleMaximize).not.toHaveBeenCalled();
   });
 
   it("uses standard custom controls on Linux and supports titlebar double-click", async () => {

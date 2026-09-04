@@ -11,5 +11,6 @@ export async function runWindowAction(action: WindowAction) {
 }
 
 export function toggleWindowMaximize() {
+  if (navigator.userAgent.toLowerCase().includes("mac")) return Promise.resolve();
   return runWindowAction("maximize");
 }

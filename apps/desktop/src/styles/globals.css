@@ -88,15 +88,6 @@ kbd {
   background: var(--bg);
 }
 
-.window-frame[data-platform="macos"] {
-  border-radius: 18px;
-  overflow: hidden;
-}
-
-html[data-window-maximized="true"] .window-frame[data-platform="macos"] {
-  border-radius: 0;
-}
-
 .app-shell {
   display: grid;
   width: 100%;
