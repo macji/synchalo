@@ -88,6 +88,27 @@ kbd {
   background: var(--bg);
 }
 
+.window-frame[data-platform="linux"] {
+  width: calc(100% - var(--window-frame-gutter-total));
+  height: calc(100% - var(--window-frame-gutter-total));
+  margin: var(--window-frame-gutter);
+  border: 1px solid var(--window-frame-border);
+  border-radius: var(--window-frame-radius);
+  overflow: hidden;
+  background: var(--bg);
+  box-shadow: var(--window-frame-shadow);
+  isolation: isolate;
+}
+
+.window-frame[data-platform="linux"][data-window-maximized="true"] {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
 .app-shell {
   display: grid;
   width: 100%;

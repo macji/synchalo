@@ -21,6 +21,7 @@ import { UpdateDialog } from "./components/UpdateDialog";
 import { WindowTitlebar } from "./components/WindowTitlebar";
 import { localizeError, useI18n } from "./i18n";
 import { DeviceOfflineDebouncer } from "./lib/devicePresence";
+import { useLinuxWindowMaximized } from "./lib/windowState";
 import { ClipboardPage } from "./pages/ClipboardPage";
 import { FilesPage } from "./pages/FilesPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -28,6 +29,8 @@ import { SettingsPage } from "./pages/SettingsPage";
 export default function App() {
   const { setPreference, t } = useI18n();
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
+  const windowPlatform = snapshot?.capabilities.platform ?? detectWindowPlatform();
+  const linuxWindowMaximized = useLinuxWindowMaximized(windowPlatform);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [deviceOfflineDebouncer] = useState(
     () => new DeviceOfflineDebouncer((devices) => {
@@ -783,8 +786,12 @@ export default function App() {
 
   if (fatalError) {
     return (
-      <div className="window-frame" data-platform={detectWindowPlatform()}>
-        <WindowTitlebar platform={detectWindowPlatform()} />
+      <div
+        className="window-frame"
+        data-platform={windowPlatform}
+        data-window-maximized={linuxWindowMaximized}
+      >
+        <WindowTitlebar platform={windowPlatform} />
         <main className="fatal-screen">
           <HaloMark size={44} />
           <AlertTriangle aria-hidden="true" size={24} />
@@ -799,8 +806,12 @@ export default function App() {
 
   if (!snapshot) {
     return (
-      <div className="window-frame" data-platform={detectWindowPlatform()}>
-        <WindowTitlebar platform={detectWindowPlatform()} />
+      <div
+        className="window-frame"
+        data-platform={windowPlatform}
+        data-window-maximized={linuxWindowMaximized}
+      >
+        <WindowTitlebar platform={windowPlatform} />
         <main className="loading-screen">
           <HaloMark size={40} />
           <LoaderCircle className="loading-spinner" size={20} />
@@ -811,8 +822,12 @@ export default function App() {
   }
 
   return (
-    <div className="window-frame" data-platform={snapshot.capabilities.platform}>
-      <WindowTitlebar platform={snapshot.capabilities.platform} />
+    <div
+      className="window-frame"
+      data-platform={windowPlatform}
+      data-window-maximized={linuxWindowMaximized}
+    >
+      <WindowTitlebar platform={windowPlatform} />
       <div className="app-shell" data-route={route}>
         <Sidebar
           onNavigate={setRoute}
