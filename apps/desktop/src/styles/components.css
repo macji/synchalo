@@ -41,31 +41,22 @@
   border: 0.5px solid rgb(0 0 0 / 16%);
   border-radius: 50%;
   box-shadow: inset 0 0.5px 0 rgb(255 255 255 / 24%);
-  color: rgb(54 32 24 / 78%);
+  color: rgb(25 27 31 / 76%);
 }
 
 .traffic-light--close { background: #ff5f57; }
 .traffic-light--minimize { background: #febc2e; }
 .traffic-light--maximize { background: #28c840; }
 
-.traffic-light svg,
-.traffic-light-expand {
+.traffic-light > svg {
+  visibility: hidden;
   opacity: 0;
   transition: opacity 100ms ease;
 }
 
-.window-controls--mac:hover .traffic-light svg,
-.window-controls--mac:hover .traffic-light-expand,
-.traffic-light:focus-visible svg,
-.traffic-light:focus-visible .traffic-light-expand {
+.window-controls--mac:hover > .traffic-light > svg {
+  visibility: visible;
   opacity: 1;
-}
-
-.traffic-light-expand {
-  width: 6px;
-  height: 6px;
-  border: 1px solid rgb(18 72 25 / 78%);
-  border-radius: 1px;
 }
 
 .window-controls--standard {

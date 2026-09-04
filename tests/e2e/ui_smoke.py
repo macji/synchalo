@@ -35,6 +35,21 @@ def main() -> None:
         assert window_controls.is_visible()
         assert window_controls.get_attribute("data-platform") == "macos"
         assert window_controls.locator(".traffic-light").count() == 3
+        traffic_icons = window_controls.locator(".traffic-light > svg")
+        assert traffic_icons.count() == 3
+        assert window_controls.locator(".lucide-maximize-2").count() == 1
+        assert traffic_icons.evaluate_all(
+            "icons => icons.every(icon => getComputedStyle(icon).visibility === 'hidden')"
+        )
+        window_controls.locator(".window-controls--mac").hover()
+        assert traffic_icons.evaluate_all(
+            "icons => icons.every(icon => getComputedStyle(icon).visibility === 'visible')"
+        )
+        page.screenshot(path=ARTIFACTS / "window-controls-hover.png", full_page=True)
+        page.locator(".clipboard-page .page-header h1").hover()
+        assert traffic_icons.evaluate_all(
+            "icons => icons.every(icon => getComputedStyle(icon).visibility === 'hidden')"
+        )
         assert page.locator(".window-titlebar").count() == 0
         assert page.locator(".window-route-title").count() == 0
         assert page.locator(".window-frame").evaluate(

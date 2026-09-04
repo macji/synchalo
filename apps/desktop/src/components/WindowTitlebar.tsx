@@ -1,4 +1,4 @@
-import { Minus, Square, X } from "lucide-react";
+import { Maximize2, Minus, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect } from "react";
 
@@ -50,7 +50,7 @@ export function WindowTitlebar({ platform }: WindowTitlebarProps) {
               title={t("window.close")}
               type="button"
             >
-              <X aria-hidden="true" size={8} strokeWidth={2.6} />
+              <X aria-hidden="true" size={9} strokeWidth={3} />
             </button>
             <button
               aria-label={t("window.minimize")}
@@ -59,7 +59,7 @@ export function WindowTitlebar({ platform }: WindowTitlebarProps) {
               title={t("window.minimize")}
               type="button"
             >
-              <Minus aria-hidden="true" size={8} strokeWidth={2.6} />
+              <Minus aria-hidden="true" size={9} strokeWidth={3} />
             </button>
             <button
               aria-label={t("window.maximize")}
@@ -68,7 +68,7 @@ export function WindowTitlebar({ platform }: WindowTitlebarProps) {
               title={t("window.maximize")}
               type="button"
             >
-              <span aria-hidden="true" className="traffic-light-expand" />
+              <Maximize2 aria-hidden="true" size={8} strokeWidth={3} />
             </button>
           </div>
         ) : null}
@@ -76,31 +76,31 @@ export function WindowTitlebar({ platform }: WindowTitlebarProps) {
 
       {!isMac ? (
         <div className="window-controls window-controls--standard">
-            <button
-              aria-label={t("window.minimize")}
-              onClick={() => void runWindowAction("minimize")}
-              title={t("window.minimize")}
-              type="button"
-            >
-              <Minus aria-hidden="true" size={15} />
-            </button>
-            <button
-              aria-label={t("window.maximize")}
-              onClick={() => void runWindowAction("maximize")}
-              title={t("window.maximize")}
-              type="button"
-            >
-              <Square aria-hidden="true" size={12} />
-            </button>
-            <button
-              aria-label={t("window.close")}
-              className="window-control-close"
-              onClick={() => void runWindowAction("close")}
-              title={t("window.close")}
-              type="button"
-            >
-              <X aria-hidden="true" size={15} />
-            </button>
+          <button
+            aria-label={t("window.minimize")}
+            onClick={() => void runWindowAction("minimize")}
+            title={t("window.minimize")}
+            type="button"
+          >
+            <Minus aria-hidden="true" size={15} />
+          </button>
+          <button
+            aria-label={t("window.maximize")}
+            onClick={() => void runWindowAction("maximize")}
+            title={t("window.maximize")}
+            type="button"
+          >
+            <Square aria-hidden="true" size={12} />
+          </button>
+          <button
+            aria-label={t("window.close")}
+            className="window-control-close"
+            onClick={() => void runWindowAction("close")}
+            title={t("window.close")}
+            type="button"
+          >
+            <X aria-hidden="true" size={15} />
+          </button>
         </div>
       ) : null}
     </div>
