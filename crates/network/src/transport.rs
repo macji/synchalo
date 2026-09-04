@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, hash_map::Entry},
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::{Path, PathBuf},
     sync::Arc,
@@ -21,11 +21,12 @@ use synchalo_core::{
     MAX_CLIPBOARD_BYTES, PROTOCOL_VERSION, content_hash,
 };
 use synchalo_transfer::{
-    FileManifest, TRANSFER_CHUNK_BYTES, prepare_incoming, verify_and_commit_incoming,
+    FileManifest, TRANSFER_CHUNK_BYTES, prepare_incoming, verified_resume_offset,
+    verify_and_commit_incoming, verify_chunk,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt},
-    sync::mpsc,
+    sync::{mpsc, oneshot, watch},
     time::timeout,
 };
 use uuid::Uuid;
@@ -37,6 +38,8 @@ const MAX_WIRE_FRAME_BYTES: usize = 2 * 1024 * 1024;
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(8);
 const CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(10);
+const TRANSFER_SYNC_INTERVAL: Duration = Duration::from_secs(1);
+const TRANSFER_SYNC_BYTES: u64 = 64 * 1024 * 1024;
 const AUTH_CLIENT_LABEL: &[u8] = b"synchalo-client-auth-v1";
 const AUTH_SERVER_LABEL: &[u8] = b"synchalo-server-auth-v1";
 
@@ -105,7 +108,7 @@ pub struct PairingCandidate {
     pub platform: DevicePlatform,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub enum TransportEvent {
     PairingApprovalRequested(PairingCandidate),
     Paired {
@@ -131,6 +134,7 @@ pub enum TransportEvent {
     IncomingFileStarted {
         from_device_id: Uuid,
         manifest: FileManifest,
+        respond_to: oneshot::Sender<Result<(), String>>,
     },
     FileProgress {
         transfer_id: Uuid,
@@ -138,6 +142,11 @@ pub enum TransportEvent {
         transferred: u64,
         total: u64,
         bytes_per_second: u64,
+        incoming: bool,
+    },
+    FileVerifying {
+        transfer_id: Uuid,
+        peer_device_id: Uuid,
         incoming: bool,
     },
     FileCompleted {
@@ -151,6 +160,15 @@ pub enum TransportEvent {
         peer_device_id: Uuid,
         error: String,
         incoming: bool,
+    },
+    FileRetryRequested {
+        from_device_id: Uuid,
+        transfer_id: Uuid,
+        respond_to: oneshot::Sender<Result<(), String>>,
+    },
+    FileCancelRequested {
+        from_device_id: Uuid,
+        transfer_id: Uuid,
     },
     Error(String),
 }
@@ -167,8 +185,20 @@ struct TransportInner {
     trusted: RwLock<HashMap<Uuid, TrustedPeer>>,
     connections: RwLock<HashMap<Uuid, Connection>>,
     pending_pairings: Mutex<HashMap<Uuid, tokio::sync::oneshot::Sender<bool>>>,
+    incoming_cancellations: Mutex<HashMap<(Uuid, Uuid), watch::Sender<bool>>>,
     receive_directory: RwLock<PathBuf>,
     events_tx: mpsc::UnboundedSender<TransportEvent>,
+}
+
+struct IncomingTransferGuard {
+    inner: Arc<TransportInner>,
+    key: (Uuid, Uuid),
+}
+
+impl Drop for IncomingTransferGuard {
+    fn drop(&mut self) {
+        self.inner.incoming_cancellations.lock().remove(&self.key);
+    }
 }
 
 impl LanTransport {
@@ -196,6 +226,7 @@ impl LanTransport {
                 ),
                 connections: RwLock::new(HashMap::new()),
                 pending_pairings: Mutex::new(HashMap::new()),
+                incoming_cancellations: Mutex::new(HashMap::new()),
                 receive_directory: RwLock::new(receive_directory),
                 events_tx,
             }),
@@ -486,6 +517,44 @@ impl LanTransport {
         Ok(())
     }
 
+    pub fn cancel_incoming_file(&self, peer_id: Uuid, transfer_id: Uuid) -> bool {
+        self.inner
+            .incoming_cancellations
+            .lock()
+            .get(&(peer_id, transfer_id))
+            .is_some_and(|sender| sender.send(true).is_ok())
+    }
+
+    pub async fn request_file_retry(
+        &self,
+        peer_id: Uuid,
+        transfer_id: Uuid,
+    ) -> Result<(), AppError> {
+        let connection = self
+            .inner
+            .connections
+            .read()
+            .get(&peer_id)
+            .cloned()
+            .ok_or_else(|| AppError::Network("source device is offline".to_owned()))?;
+        send_application_message(&connection, &WireFrame::FileRetry { transfer_id }).await
+    }
+
+    pub async fn request_file_cancel(
+        &self,
+        peer_id: Uuid,
+        transfer_id: Uuid,
+    ) -> Result<(), AppError> {
+        let connection = self
+            .inner
+            .connections
+            .read()
+            .get(&peer_id)
+            .cloned()
+            .ok_or_else(|| AppError::Network("peer device is offline".to_owned()))?;
+        send_application_message(&connection, &WireFrame::FileCancel { transfer_id }).await
+    }
+
     pub async fn send_file(
         &self,
         peer_id: Uuid,
@@ -518,13 +587,17 @@ impl LanTransport {
             },
         )
         .await?;
-        let resume_offset = match read_frame::<WireFrame>(&mut recv).await? {
-            WireFrame::FileAccept { resume_offset } if resume_offset <= manifest.file_size => {
-                resume_offset
-            }
+        let (proposed_offset, proposed_blake3) = match read_frame::<WireFrame>(&mut recv).await? {
+            WireFrame::FileAccept {
+                resume_offset,
+                resume_blake3,
+            } if resume_offset <= manifest.file_size => (resume_offset, resume_blake3),
             WireFrame::FileFailed { message } => return Err(AppError::File(message)),
             _ => return Err(protocol_error("expected file acceptance")),
         };
+        let resume_offset =
+            verified_resume_offset(path, &manifest, proposed_offset, &proposed_blake3).await?;
+        write_frame(&mut send, &WireFrame::FileResume { resume_offset }).await?;
         let mut file = tokio::fs::File::open(path).await.map_err(network_error)?;
         file.seek(std::io::SeekFrom::Start(resume_offset))
             .await
@@ -533,6 +606,14 @@ impl LanTransport {
         let started = Instant::now();
         let mut last_report = Instant::now() - Duration::from_secs(1);
         let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
+        let _ = self.inner.events_tx.send(TransportEvent::FileProgress {
+            transfer_id: manifest.id,
+            peer_device_id: peer_id,
+            transferred,
+            total: manifest.file_size,
+            bytes_per_second: 0,
+            incoming: false,
+        });
         while transferred < manifest.file_size {
             let remaining = (manifest.file_size - transferred) as usize;
             let read = file
@@ -544,6 +625,16 @@ impl LanTransport {
                     "source file ended during transfer".to_owned(),
                 ));
             }
+            let chunk_blake3 = blake3::hash(&buffer[..read]).to_hex().to_string();
+            write_frame(
+                &mut send,
+                &WireFrame::FileChunk {
+                    offset: transferred,
+                    length: read as u32,
+                    blake3: chunk_blake3,
+                },
+            )
+            .await?;
             send.write_all(&buffer[..read])
                 .await
                 .map_err(network_error)?;
@@ -566,26 +657,35 @@ impl LanTransport {
             }
         }
         send.finish().map_err(network_error)?;
-        match read_frame::<WireFrame>(&mut recv).await? {
-            WireFrame::FileCompleted => {
-                let _ = self.inner.events_tx.send(TransportEvent::FileCompleted {
-                    transfer_id: manifest.id,
-                    peer_device_id: peer_id,
-                    path: None,
-                    incoming: false,
-                });
-                Ok(())
+        loop {
+            match read_frame::<WireFrame>(&mut recv).await? {
+                WireFrame::FileVerifying => {
+                    let _ = self.inner.events_tx.send(TransportEvent::FileVerifying {
+                        transfer_id: manifest.id,
+                        peer_device_id: peer_id,
+                        incoming: false,
+                    });
+                }
+                WireFrame::FileCompleted => {
+                    let _ = self.inner.events_tx.send(TransportEvent::FileCompleted {
+                        transfer_id: manifest.id,
+                        peer_device_id: peer_id,
+                        path: None,
+                        incoming: false,
+                    });
+                    return Ok(());
+                }
+                WireFrame::FileFailed { message } => {
+                    let _ = self.inner.events_tx.send(TransportEvent::FileFailed {
+                        transfer_id: manifest.id,
+                        peer_device_id: peer_id,
+                        error: message.clone(),
+                        incoming: false,
+                    });
+                    return Err(AppError::File(message));
+                }
+                _ => return Err(protocol_error("expected file verification or completion")),
             }
-            WireFrame::FileFailed { message } => {
-                let _ = self.inner.events_tx.send(TransportEvent::FileFailed {
-                    transfer_id: manifest.id,
-                    peer_device_id: peer_id,
-                    error: message.clone(),
-                    incoming: false,
-                });
-                Err(AppError::File(message))
-            }
-            _ => Err(protocol_error("expected file completion")),
         }
     }
 
@@ -928,6 +1028,57 @@ impl LanTransport {
                 send.finish().map_err(network_error)?;
                 Ok(())
             }
+            WireFrame::FileRetry { transfer_id } => {
+                let (respond_to, response) = oneshot::channel();
+                self.inner
+                    .events_tx
+                    .send(TransportEvent::FileRetryRequested {
+                        from_device_id: peer_id,
+                        transfer_id,
+                        respond_to,
+                    })
+                    .map_err(|_| {
+                        AppError::Network("runtime event loop is unavailable".to_owned())
+                    })?;
+                match timeout(HANDSHAKE_TIMEOUT, response).await {
+                    Ok(Ok(Ok(()))) => write_frame(&mut send, &WireFrame::Ack).await?,
+                    Ok(Ok(Err(message))) => {
+                        write_frame(&mut send, &WireFrame::Error { message }).await?
+                    }
+                    Ok(Err(_)) => {
+                        write_frame(
+                            &mut send,
+                            &WireFrame::Error {
+                                message: "retry request was not handled".to_owned(),
+                            },
+                        )
+                        .await?
+                    }
+                    Err(_) => {
+                        write_frame(
+                            &mut send,
+                            &WireFrame::Error {
+                                message: "retry request timed out".to_owned(),
+                            },
+                        )
+                        .await?
+                    }
+                }
+                send.finish().map_err(network_error)?;
+                Ok(())
+            }
+            WireFrame::FileCancel { transfer_id } => {
+                let _ = self
+                    .inner
+                    .events_tx
+                    .send(TransportEvent::FileCancelRequested {
+                        from_device_id: peer_id,
+                        transfer_id,
+                    });
+                write_frame(&mut send, &WireFrame::Ack).await?;
+                send.finish().map_err(network_error)?;
+                Ok(())
+            }
             WireFrame::FileOffer { manifest } => {
                 self.receive_file(peer_id, manifest, send, recv).await
             }
@@ -957,23 +1108,85 @@ impl LanTransport {
                 return Err(error);
             }
         };
-        let _ = self
-            .inner
+        let cancellation_key = (peer_id, manifest.id);
+        let (cancel_sender, mut cancel_receiver) = watch::channel(false);
+        let already_active = {
+            let mut cancellations = self.inner.incoming_cancellations.lock();
+            match cancellations.entry(cancellation_key) {
+                Entry::Vacant(entry) => {
+                    entry.insert(cancel_sender);
+                    false
+                }
+                Entry::Occupied(_) => true,
+            }
+        };
+        if already_active {
+            let error = AppError::File("this file transfer is already active".to_owned());
+            return Err(self
+                .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                .await);
+        }
+        let _cancellation_guard = IncomingTransferGuard {
+            inner: self.inner.clone(),
+            key: cancellation_key,
+        };
+        let (respond_to, admission) = oneshot::channel();
+        self.inner
             .events_tx
             .send(TransportEvent::IncomingFileStarted {
                 from_device_id: peer_id,
                 manifest: manifest.clone(),
-            });
+                respond_to,
+            })
+            .map_err(|_| AppError::Network("runtime event loop is unavailable".to_owned()))?;
+        let admission = match timeout(HANDSHAKE_TIMEOUT, admission).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err("incoming file admission was not handled".to_owned()),
+            Err(_) => Err("incoming file admission timed out".to_owned()),
+        };
+        if let Err(message) = admission {
+            let error = AppError::File(message);
+            return Err(self
+                .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                .await);
+        }
         write_frame(
             &mut send,
             &WireFrame::FileAccept {
                 resume_offset: target.resume_offset,
+                resume_blake3: target.resume_blake3.clone(),
             },
         )
         .await?;
+        let resume_offset = tokio::select! {
+            biased;
+            _ = cancel_receiver.changed() => {
+                let _ = recv.stop(16_u32.into());
+                return Ok(());
+            }
+            result = read_frame::<WireFrame>(&mut recv) => match result? {
+                WireFrame::FileResume { resume_offset }
+                    if resume_offset == 0 || resume_offset == target.resume_offset => resume_offset,
+                _ => return Err(protocol_error("expected a valid file resume offset")),
+            }
+        };
+        let _ = self.inner.events_tx.send(TransportEvent::FileProgress {
+            transfer_id: manifest.id,
+            peer_device_id: peer_id,
+            transferred: resume_offset,
+            total: manifest.file_size,
+            bytes_per_second: 0,
+            incoming: true,
+        });
         if target.already_complete {
-            write_frame(&mut send, &WireFrame::FileCompleted).await?;
-            send.finish().map_err(network_error)?;
+            if resume_offset != manifest.file_size {
+                let error = AppError::File("completed file resume state is invalid".to_owned());
+                return Err(self
+                    .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                    .await);
+            }
+            let _ = write_frame(&mut send, &WireFrame::FileCompleted).await;
+            let _ = send.finish();
             let _ = self.inner.events_tx.send(TransportEvent::FileCompleted {
                 transfer_id: manifest.id,
                 peer_device_id: peer_id,
@@ -983,62 +1196,120 @@ impl LanTransport {
             return Ok(());
         }
 
-        let mut output = tokio::fs::OpenOptions::new()
+        let mut output = match tokio::fs::OpenOptions::new()
             .create(true)
-            .append(target.resume_offset > 0)
-            .truncate(target.resume_offset == 0)
+            .append(resume_offset > 0)
+            .truncate(resume_offset == 0)
             .write(true)
             .open(&target.temp_path)
             .await
-            .map_err(network_error)?;
-        let mut transferred = target.resume_offset;
+        {
+            Ok(output) => output,
+            Err(source) => {
+                let error = AppError::File(format!("failed to open incoming file: {source}"));
+                return Err(self
+                    .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                    .await);
+            }
+        };
+        let mut transferred = resume_offset;
         let started = Instant::now();
         let mut last_report = Instant::now() - Duration::from_secs(1);
-        let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
+        let mut last_sync = Instant::now();
+        let mut last_sync_bytes = resume_offset;
         while transferred < manifest.file_size {
-            let remaining = (manifest.file_size - transferred) as usize;
-            let read = match recv
-                .read(&mut buffer[..remaining.min(TRANSFER_CHUNK_BYTES)])
-                .await
-            {
-                Ok(Some(read)) if read > 0 => read,
-                Ok(_) => {
-                    let error =
-                        "file stream ended early; the partial file can be resumed".to_owned();
-                    let _ = self.inner.events_tx.send(TransportEvent::FileFailed {
-                        transfer_id: manifest.id,
-                        peer_device_id: peer_id,
-                        error: error.clone(),
-                        incoming: true,
-                    });
-                    return Err(AppError::File(error));
+            let header = tokio::select! {
+                biased;
+                _ = cancel_receiver.changed() => {
+                    let _ = recv.stop(16_u32.into());
+                    return Ok(());
                 }
-                Err(source) => {
-                    let error = format!("file stream interrupted: {source}");
-                    let _ = self.inner.events_tx.send(TransportEvent::FileFailed {
-                        transfer_id: manifest.id,
-                        peer_device_id: peer_id,
-                        error: error.clone(),
-                        incoming: true,
-                    });
-                    return Err(AppError::File(error));
+                result = read_frame::<WireFrame>(&mut recv) => result,
+            };
+            let (offset, length, chunk_blake3) = match header {
+                Ok(WireFrame::FileChunk {
+                    offset,
+                    length,
+                    blake3,
+                }) if length > 0
+                    && length as usize <= TRANSFER_CHUNK_BYTES
+                    && offset == transferred
+                    && offset
+                        .checked_add(u64::from(length))
+                        .is_some_and(|end| end <= manifest.file_size) =>
+                {
+                    (offset, length as usize, blake3)
+                }
+                Ok(_) => {
+                    let error = AppError::File("invalid file chunk header".to_owned());
+                    return Err(self
+                        .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                        .await);
+                }
+                Err(error) => {
+                    let error = AppError::File(format!(
+                        "file stream interrupted; verified data can be resumed: {error}"
+                    ));
+                    return Err(self
+                        .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                        .await);
                 }
             };
-            if let Err(source) = output.write_all(&buffer[..read]).await {
-                let error = format!("failed to write incoming file: {source}");
-                let _ = self.inner.events_tx.send(TransportEvent::FileFailed {
-                    transfer_id: manifest.id,
-                    peer_device_id: peer_id,
-                    error: error.clone(),
-                    incoming: true,
-                });
-                return Err(AppError::File(error));
+            let mut chunk = vec![0_u8; length];
+            let read_result = tokio::select! {
+                biased;
+                _ = cancel_receiver.changed() => {
+                    let _ = recv.stop(16_u32.into());
+                    return Ok(());
+                }
+                result = recv.read_exact(&mut chunk) => result,
+            };
+            if let Err(source) = read_result {
+                let error = AppError::File(format!(
+                    "file chunk interrupted; verified data can be resumed: {source}"
+                ));
+                return Err(self
+                    .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                    .await);
             }
-            transferred += read as u64;
+            if let Err(error) = verify_chunk(
+                transferred,
+                manifest.file_size,
+                offset,
+                &chunk,
+                &chunk_blake3,
+            ) {
+                let _ = recv.stop(17_u32.into());
+                return Err(self
+                    .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                    .await);
+            }
+            if let Err(source) = output.write_all(&chunk).await {
+                let error = AppError::File(format!("failed to write incoming file: {source}"));
+                return Err(self
+                    .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                    .await);
+            }
+            transferred += length as u64;
+            if transferred.saturating_sub(last_sync_bytes) >= TRANSFER_SYNC_BYTES
+                || last_sync.elapsed() >= TRANSFER_SYNC_INTERVAL
+                || transferred == manifest.file_size
+            {
+                if let Err(source) = output.sync_data().await {
+                    let error = AppError::File(format!(
+                        "failed to persist verified incoming data: {source}"
+                    ));
+                    return Err(self
+                        .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                        .await);
+                }
+                last_sync = Instant::now();
+                last_sync_bytes = transferred;
+            }
             if last_report.elapsed() >= Duration::from_millis(150)
                 || transferred == manifest.file_size
             {
-                let speed = ((transferred - target.resume_offset) as f64
+                let speed = ((transferred - resume_offset) as f64
                     / started.elapsed().as_secs_f64().max(0.001))
                     as u64;
                 let _ = self.inner.events_tx.send(TransportEvent::FileProgress {
@@ -1052,14 +1323,38 @@ impl LanTransport {
                 last_report = Instant::now();
             }
         }
-        output.flush().await.map_err(network_error)?;
-        output.sync_all().await.map_err(network_error)?;
+        if let Err(source) = output.flush().await {
+            let error = AppError::File(format!("failed to flush incoming file: {source}"));
+            return Err(self
+                .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                .await);
+        }
+        if let Err(source) = output.sync_all().await {
+            let error = AppError::File(format!("failed to persist incoming file: {source}"));
+            return Err(self
+                .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                .await);
+        }
         drop(output);
 
-        match verify_and_commit_incoming(&target, &manifest).await {
+        let _ = self.inner.events_tx.send(TransportEvent::FileVerifying {
+            transfer_id: manifest.id,
+            peer_device_id: peer_id,
+            incoming: true,
+        });
+        let _ = write_frame(&mut send, &WireFrame::FileVerifying).await;
+        let verification = tokio::select! {
+            biased;
+            _ = cancel_receiver.changed() => {
+                let _ = recv.stop(16_u32.into());
+                return Ok(());
+            }
+            result = verify_and_commit_incoming(&target, &manifest) => result,
+        };
+        match verification {
             Ok(path) => {
-                write_frame(&mut send, &WireFrame::FileCompleted).await?;
-                send.finish().map_err(network_error)?;
+                let _ = write_frame(&mut send, &WireFrame::FileCompleted).await;
+                let _ = send.finish();
                 let _ = self.inner.events_tx.send(TransportEvent::FileCompleted {
                     transfer_id: manifest.id,
                     peer_device_id: peer_id,
@@ -1070,23 +1365,36 @@ impl LanTransport {
             }
             Err(error) => {
                 let _ = tokio::fs::remove_file(&target.temp_path).await;
-                write_frame(
-                    &mut send,
-                    &WireFrame::FileFailed {
-                        message: error.to_string(),
-                    },
-                )
-                .await?;
-                send.finish().map_err(network_error)?;
-                let _ = self.inner.events_tx.send(TransportEvent::FileFailed {
-                    transfer_id: manifest.id,
-                    peer_device_id: peer_id,
-                    error: error.to_string(),
-                    incoming: true,
-                });
-                Err(error)
+                Err(self
+                    .report_incoming_failure(&mut send, peer_id, manifest.id, error)
+                    .await)
             }
         }
+    }
+
+    async fn report_incoming_failure(
+        &self,
+        send: &mut SendStream,
+        peer_id: Uuid,
+        transfer_id: Uuid,
+        error: AppError,
+    ) -> AppError {
+        let message = error.to_string();
+        let _ = write_frame(
+            send,
+            &WireFrame::FileFailed {
+                message: message.clone(),
+            },
+        )
+        .await;
+        let _ = send.finish();
+        let _ = self.inner.events_tx.send(TransportEvent::FileFailed {
+            transfer_id,
+            peer_device_id: peer_id,
+            error: message,
+            incoming: true,
+        });
+        error
     }
 }
 
@@ -1183,10 +1491,26 @@ enum WireFrame {
     },
     FileAccept {
         resume_offset: u64,
+        resume_blake3: String,
     },
+    FileResume {
+        resume_offset: u64,
+    },
+    FileChunk {
+        offset: u64,
+        length: u32,
+        blake3: String,
+    },
+    FileVerifying,
     FileCompleted,
     FileFailed {
         message: String,
+    },
+    FileRetry {
+        transfer_id: Uuid,
+    },
+    FileCancel {
+        transfer_id: Uuid,
     },
     Ack,
     Error {
@@ -1438,6 +1762,28 @@ mod tests {
         }
     }
 
+    async fn admit_incoming_file(
+        events: &mut mpsc::UnboundedReceiver<TransportEvent>,
+        expected_id: Uuid,
+    ) {
+        loop {
+            let event = timeout(Duration::from_secs(3), events.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            if let TransportEvent::IncomingFileStarted {
+                manifest,
+                respond_to,
+                ..
+            } = event
+                && manifest.id == expected_id
+            {
+                respond_to.send(Ok(())).unwrap();
+                return;
+            }
+        }
+    }
+
     #[tokio::test]
     async fn pairs_then_authenticates_and_delivers_signed_clipboard() {
         let server_identity = identity("Server");
@@ -1462,7 +1808,7 @@ mod tests {
         let client_identity = identity("Client");
         let client_id = client_identity.device_id;
         let client_files = tempfile::tempdir().unwrap();
-        let (client, _client_events) = LanTransport::start(
+        let (client, mut client_events) = LanTransport::start(
             client_identity,
             PairingCodeManager::new(),
             Vec::new(),
@@ -1531,6 +1877,53 @@ mod tests {
         }
         assert!(saw_pair && saw_online);
 
+        let retry_transfer_id = Uuid::new_v4();
+        let retry_request = tokio::spawn({
+            let client = client.clone();
+            async move {
+                client
+                    .request_file_retry(server_id, retry_transfer_id)
+                    .await
+            }
+        });
+        let retry_event = timeout(Duration::from_secs(3), server_events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        match retry_event {
+            TransportEvent::FileRetryRequested {
+                from_device_id,
+                transfer_id,
+                respond_to,
+            } => {
+                assert_eq!(from_device_id, client_id);
+                assert_eq!(transfer_id, retry_transfer_id);
+                respond_to.send(Ok(())).unwrap();
+            }
+            other => panic!("expected retry request, got {other:?}"),
+        }
+        retry_request.await.unwrap().unwrap();
+
+        let cancel_transfer_id = Uuid::new_v4();
+        client
+            .request_file_cancel(server_id, cancel_transfer_id)
+            .await
+            .unwrap();
+        let cancel_event = timeout(Duration::from_secs(3), server_events.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        match cancel_event {
+            TransportEvent::FileCancelRequested {
+                from_device_id,
+                transfer_id,
+            } => {
+                assert_eq!(from_device_id, client_id);
+                assert_eq!(transfer_id, cancel_transfer_id);
+            }
+            other => panic!("expected cancellation request, got {other:?}"),
+        }
+
         let text = "hello from client".to_owned();
         let event = ClipboardEvent {
             id: Uuid::now_v7(),
@@ -1596,37 +1989,176 @@ mod tests {
         }
 
         let source = client_files.path().join("payload.bin");
-        tokio::fs::write(&source, b"verified file payload")
-            .await
-            .unwrap();
+        let payload: Vec<_> = (0..TRANSFER_CHUNK_BYTES + 4_097)
+            .map(|index| (index % 251) as u8)
+            .collect();
+        tokio::fs::write(&source, &payload).await.unwrap();
         let (manifest, _) = synchalo_transfer::inspect_file(&source).await.unwrap();
         let transfer_id = manifest.id;
-        if let Err(error) = client.send_file(server_id, &source, manifest).await {
+        let partial_path = server_files
+            .path()
+            .join(format!(".synchalo-{transfer_id}.part"));
+        tokio::fs::write(&partial_path, vec![0xa5; 8_192])
+            .await
+            .unwrap();
+        let send_task = tokio::spawn({
+            let client = client.clone();
+            let source = source.clone();
+            async move { client.send_file(server_id, &source, manifest).await }
+        });
+        admit_incoming_file(&mut server_events, transfer_id).await;
+        if let Err(error) = send_task.await.unwrap() {
             let mut diagnostics = vec![error.to_string()];
             while let Ok(event) = server_events.try_recv() {
                 diagnostics.push(format!("{event:?}"));
             }
             panic!("file transfer failed: {diagnostics:#?}");
         }
+        let mut restarted_from_zero = false;
+        let mut saw_verifying = false;
         loop {
             let received = timeout(Duration::from_secs(3), server_events.recv())
                 .await
                 .unwrap()
                 .unwrap();
-            if let TransportEvent::FileCompleted {
-                transfer_id: completed_id,
-                path: Some(path),
-                incoming: true,
-                ..
-            } = received
-            {
-                assert_eq!(completed_id, transfer_id);
-                assert_eq!(
-                    tokio::fs::read(path).await.unwrap(),
-                    b"verified file payload"
-                );
-                break;
+            match received {
+                TransportEvent::FileProgress {
+                    transfer_id: progress_id,
+                    transferred: 0,
+                    incoming: true,
+                    ..
+                } if progress_id == transfer_id => restarted_from_zero = true,
+                TransportEvent::FileVerifying {
+                    transfer_id: verifying_id,
+                    incoming: true,
+                    ..
+                } if verifying_id == transfer_id => saw_verifying = true,
+                TransportEvent::FileCompleted {
+                    transfer_id: completed_id,
+                    path: Some(path),
+                    incoming: true,
+                    ..
+                } if completed_id == transfer_id => {
+                    assert_eq!(tokio::fs::read(path).await.unwrap(), payload);
+                    break;
+                }
+                _ => {}
             }
         }
+        assert!(restarted_from_zero);
+        assert!(saw_verifying);
+
+        let mut sender_saw_verifying = false;
+        while let Ok(event) = client_events.try_recv() {
+            if matches!(
+                event,
+                TransportEvent::FileVerifying {
+                    transfer_id: id,
+                    incoming: false,
+                    ..
+                } if id == transfer_id
+            ) {
+                sender_saw_verifying = true;
+            }
+        }
+        assert!(sender_saw_verifying);
+
+        let resume_source = client_files.path().join("resume.bin");
+        let resume_payload: Vec<_> = (0..TRANSFER_CHUNK_BYTES + 2_049)
+            .map(|index| (index % 239) as u8)
+            .collect();
+        tokio::fs::write(&resume_source, &resume_payload)
+            .await
+            .unwrap();
+        let (resume_manifest, _) = synchalo_transfer::inspect_file(&resume_source)
+            .await
+            .unwrap();
+        let resume_id = resume_manifest.id;
+        let verified_prefix = TRANSFER_CHUNK_BYTES as u64;
+        let resume_partial = server_files
+            .path()
+            .join(format!(".synchalo-{resume_id}.part"));
+        tokio::fs::write(&resume_partial, &resume_payload[..TRANSFER_CHUNK_BYTES])
+            .await
+            .unwrap();
+        let resume_task = tokio::spawn({
+            let client = client.clone();
+            let resume_source = resume_source.clone();
+            async move {
+                client
+                    .send_file(server_id, &resume_source, resume_manifest)
+                    .await
+            }
+        });
+        admit_incoming_file(&mut server_events, resume_id).await;
+        resume_task.await.unwrap().unwrap();
+
+        let mut resumed_at_verified_prefix = false;
+        loop {
+            let received = timeout(Duration::from_secs(3), server_events.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            match received {
+                TransportEvent::FileProgress {
+                    transfer_id,
+                    transferred,
+                    incoming: true,
+                    ..
+                } if transfer_id == resume_id && transferred == verified_prefix => {
+                    resumed_at_verified_prefix = true;
+                }
+                TransportEvent::FileCompleted {
+                    transfer_id,
+                    path: Some(path),
+                    incoming: true,
+                    ..
+                } if transfer_id == resume_id => {
+                    assert_eq!(tokio::fs::read(path).await.unwrap(), resume_payload);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        assert!(resumed_at_verified_prefix);
+
+        let cancel_source = client_files.path().join("cancel.bin");
+        let cancel_payload = vec![0x5c; TRANSFER_CHUNK_BYTES * 2];
+        tokio::fs::write(&cancel_source, &cancel_payload)
+            .await
+            .unwrap();
+        let (cancel_manifest, _) = synchalo_transfer::inspect_file(&cancel_source)
+            .await
+            .unwrap();
+        let cancelled_id = cancel_manifest.id;
+        let cancelled_partial = server_files
+            .path()
+            .join(format!(".synchalo-{cancelled_id}.part"));
+        tokio::fs::write(&cancelled_partial, &cancel_payload[..TRANSFER_CHUNK_BYTES])
+            .await
+            .unwrap();
+        let send_task = tokio::spawn({
+            let client = client.clone();
+            let cancel_source = cancel_source.clone();
+            async move {
+                client
+                    .send_file(server_id, &cancel_source, cancel_manifest)
+                    .await
+            }
+        });
+        admit_incoming_file(&mut server_events, cancelled_id).await;
+        assert!(server.cancel_incoming_file(client_id, cancelled_id));
+        assert!(
+            timeout(Duration::from_secs(3), send_task)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_err()
+        );
+        assert!(!server_files.path().join("cancel.bin").exists());
+        assert_eq!(
+            tokio::fs::read(cancelled_partial).await.unwrap(),
+            cancel_payload[..TRANSFER_CHUNK_BYTES]
+        );
     }
 }

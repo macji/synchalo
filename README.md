@@ -20,7 +20,7 @@ Install the latest stable SyncHalo release from https://github.com/macji/synchal
 - Pairs devices using a 60-second one-time sync code; an existing device must still approve each new device.
 - Synchronizes plain-text clipboard content between trusted devices in real time while suppressing remote-write sync loops.
 - Sends files through drag and drop, a native file picker, or in-page paste; when no destination is selected, all online devices receive the files.
-- Supports streaming transfers, resumable offsets, BLAKE3 integrity verification, temporary files, and atomic commits.
+- Supports streaming 4 MiB chunks with per-chunk BLAKE3 verification, verified-prefix resume, whole-file verification, peer-aware retry and cancellation, temporary files, and atomic commits.
 - Provides clipboard and file history with search, favorites, repeat sync, and backend pagination.
 - Lets users enable deletion sync and favorite sync independently; both are disabled by default.
 - Supports English, Simplified Chinese, Traditional Chinese, Japanese, and Korean, follows the system language by default, and provides an immediate language switch in Settings.

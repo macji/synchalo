@@ -11,7 +11,7 @@ use tokio::{
 };
 use uuid::Uuid;
 
-pub const TRANSFER_CHUNK_BYTES: usize = 1024 * 1024;
+pub const TRANSFER_CHUNK_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -34,6 +34,7 @@ pub struct IncomingTarget {
     pub temp_path: PathBuf,
     pub final_path: PathBuf,
     pub resume_offset: u64,
+    pub resume_blake3: String,
     pub already_complete: bool,
 }
 
@@ -171,17 +172,86 @@ where
 }
 
 pub async fn hash_file(path: &Path) -> Result<String, AppError> {
+    let length = fs::metadata(path).await.map_err(file_error)?.len();
+    hash_file_prefix(path, length).await
+}
+
+pub async fn hash_file_prefix(path: &Path, length: u64) -> Result<String, AppError> {
     let mut file = File::open(path).await.map_err(file_error)?;
     let mut hasher = blake3::Hasher::new();
     let mut buffer = vec![0_u8; TRANSFER_CHUNK_BYTES];
-    loop {
-        let read = file.read(&mut buffer).await.map_err(file_error)?;
+    let mut remaining = length;
+    while remaining > 0 {
+        let read = file
+            .read(&mut buffer[..remaining.min(TRANSFER_CHUNK_BYTES as u64) as usize])
+            .await
+            .map_err(file_error)?;
         if read == 0 {
-            break;
+            return Err(AppError::File(
+                "file ended before the requested hash prefix".to_owned(),
+            ));
         }
         hasher.update(&buffer[..read]);
+        remaining -= read as u64;
     }
     Ok(hasher.finalize().to_hex().to_string())
+}
+
+pub async fn verified_resume_offset(
+    source: &Path,
+    manifest: &FileManifest,
+    proposed_offset: u64,
+    proposed_blake3: &str,
+) -> Result<u64, AppError> {
+    if proposed_offset > manifest.file_size {
+        return Err(AppError::File(
+            "resume offset exceeds the advertised file size".to_owned(),
+        ));
+    }
+    if proposed_offset == 0 {
+        return Ok(0);
+    }
+    if proposed_offset == manifest.file_size && proposed_blake3 == manifest.blake3 {
+        return Ok(proposed_offset);
+    }
+    let source_prefix = hash_file_prefix(source, proposed_offset).await?;
+    Ok(if source_prefix == proposed_blake3 {
+        proposed_offset
+    } else {
+        0
+    })
+}
+
+pub fn verify_chunk(
+    expected_offset: u64,
+    file_size: u64,
+    offset: u64,
+    bytes: &[u8],
+    expected_blake3: &str,
+) -> Result<(), AppError> {
+    if offset != expected_offset {
+        return Err(AppError::File(format!(
+            "file chunk starts at {offset}, expected {expected_offset}"
+        )));
+    }
+    if bytes.is_empty() || bytes.len() > TRANSFER_CHUNK_BYTES {
+        return Err(AppError::File("file chunk length is invalid".to_owned()));
+    }
+    if offset
+        .checked_add(bytes.len() as u64)
+        .is_none_or(|end| end > file_size)
+    {
+        return Err(AppError::File(
+            "file chunk exceeds the advertised file size".to_owned(),
+        ));
+    }
+    let actual_blake3 = blake3::hash(bytes).to_hex().to_string();
+    if actual_blake3 != expected_blake3 {
+        return Err(AppError::File(format!(
+            "file chunk hash mismatch at offset {offset}"
+        )));
+    }
+    Ok(())
 }
 
 pub async fn prepare_incoming(
@@ -201,6 +271,7 @@ pub async fn prepare_incoming(
             temp_path: final_path.clone(),
             final_path,
             resume_offset: manifest.file_size,
+            resume_blake3: manifest.blake3.clone(),
             already_complete: true,
         });
     }
@@ -217,6 +288,11 @@ pub async fn prepare_incoming(
     } else {
         existing
     };
+    let resume_blake3 = if resume_offset == 0 {
+        blake3::hash(&[]).to_hex().to_string()
+    } else {
+        hash_file_prefix(&temp_path, resume_offset).await?
+    };
     let remaining = manifest.file_size.saturating_sub(resume_offset);
     let safety_margin = 64 * 1024 * 1024_u64;
     let available = fs2::available_space(receive_directory).map_err(file_error)?;
@@ -230,6 +306,7 @@ pub async fn prepare_incoming(
         temp_path,
         final_path,
         resume_offset,
+        resume_blake3,
         already_complete: false,
     })
 }
@@ -395,6 +472,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(target.resume_offset, 7);
+        assert_eq!(
+            target.resume_blake3,
+            blake3::hash(&payload[..7]).to_hex().to_string()
+        );
         let mut output = OpenOptions::new()
             .append(true)
             .open(&target.temp_path)
@@ -408,5 +489,39 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(fs::read(final_path).await.unwrap(), payload);
+    }
+
+    #[tokio::test]
+    async fn resume_offset_is_used_only_when_the_source_prefix_matches() {
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = source_dir.path().join("resume.bin");
+        let payload = b"verified resume prefix and remainder";
+        fs::write(&source, payload).await.unwrap();
+        let (manifest, _) = inspect_file(&source).await.unwrap();
+        let offset = 15;
+        let matching = blake3::hash(&payload[..offset]).to_hex().to_string();
+
+        assert_eq!(
+            verified_resume_offset(&source, &manifest, offset as u64, &matching)
+                .await
+                .unwrap(),
+            offset as u64
+        );
+        assert_eq!(
+            verified_resume_offset(&source, &manifest, offset as u64, &"0".repeat(64))
+                .await
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn chunk_verification_rejects_corruption_and_wrong_offsets() {
+        let payload = b"one verified chunk";
+        let digest = blake3::hash(payload).to_hex().to_string();
+        verify_chunk(0, payload.len() as u64, 0, payload, &digest).unwrap();
+
+        assert!(verify_chunk(1, payload.len() as u64, 0, payload, &digest).is_err());
+        assert!(verify_chunk(0, payload.len() as u64, 0, b"corrupt chunk", &digest).is_err());
     }
 }

@@ -6,7 +6,7 @@ pub use error::{AppError, ErrorCode, NO_SYNC_DEVICES_MESSAGE, UserFacingError};
 pub use hlc::{HlcClock, HlcTimestamp};
 pub use model::*;
 
-pub const PROTOCOL_VERSION: u16 = 2;
+pub const PROTOCOL_VERSION: u16 = 3;
 pub const MAX_CLIPBOARD_BYTES: usize = 1024 * 1024;
 pub const DEFAULT_HISTORY_LIMIT: usize = 500;
 pub const CLIPBOARD_PAGE_SIZE: usize = 100;

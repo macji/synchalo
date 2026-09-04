@@ -114,6 +114,7 @@ export const mockSnapshot: AppSnapshot = {
       state: "transferring",
       progress: 0.67,
       createdAt: new Date(now - 70_000).toISOString(),
+      sourceDeviceId: id("1"),
       sourceDeviceName: "Jason 的 MacBook Air",
       targets: [
         {
@@ -149,6 +150,7 @@ export const mockSnapshot: AppSnapshot = {
       state: "completed",
       progress: 1,
       createdAt: new Date(now - 4_600_000).toISOString(),
+      sourceDeviceId: id("2"),
       sourceDeviceName: "Studio Ubuntu",
       targets: [],
       bytesPerSecond: null,
@@ -167,6 +169,7 @@ export const mockSnapshot: AppSnapshot = {
       state: "failed",
       progress: 0,
       createdAt: new Date(now - 8_000_000).toISOString(),
+      sourceDeviceId: id("1"),
       sourceDeviceName: "Jason 的 MacBook Air",
       targets: [
         {
@@ -241,6 +244,7 @@ export function makeMockTransfer(fileName: string, targetIds?: string[]): Transf
     state: hasOnlineTarget ? "queued" : "failed",
     progress: 0,
     createdAt: new Date().toISOString(),
+    sourceDeviceId: mockSnapshot.currentDeviceId,
     sourceDeviceName: mockSnapshot.settings.deviceName,
     targets,
     bytesPerSecond: null,

@@ -83,6 +83,7 @@ export interface TransferView {
   state: TransferState;
   progress: number;
   createdAt: string;
+  sourceDeviceId: string | null;
   sourceDeviceName: string | null;
   targets: TransferTargetView[];
   bytesPerSecond: number | null;

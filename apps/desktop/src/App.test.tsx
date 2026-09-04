@@ -125,6 +125,20 @@ describe("SyncHalo shell", () => {
     expect(check).toHaveBeenCalledTimes(3);
   });
 
+  it("cancels an active file transfer and makes the same task retryable", async () => {
+    renderApp();
+    await screen.findByRole("heading", { name: "粘贴板历史" });
+    fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
+
+    const row = screen.getByText("SyncHalo-design.zip").closest<HTMLElement>(".transfer-row");
+    expect(row).not.toBeNull();
+    fireEvent.click(within(row!).getByRole("button", { name: "取消任务" }));
+    await waitFor(() => expect(within(row!).getByText("已取消")).toBeInTheDocument());
+
+    fireEvent.click(within(row!).getByRole("button", { name: "重试当前任务" }));
+    await waitFor(() => expect(within(row!).getByText("已排队")).toBeInTheDocument());
+  });
+
   it("asks to install and restart after an automatic download is ready", async () => {
     vi.spyOn(api, "checkForUpdates").mockResolvedValue({
       state: "ready",

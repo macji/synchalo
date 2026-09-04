@@ -1062,6 +1062,7 @@ button.sync-device-row.is-selected {
   padding: 14px 4px 14px 8px;
   border-bottom: 1px solid var(--border);
   grid-template-columns: 34px minmax(0, 1fr) auto;
+  align-items: start;
   gap: 10px;
   transition: background-color 120ms ease;
 }
@@ -1093,6 +1094,7 @@ button.sync-device-row.is-selected {
 
 .transfer-heading {
   display: flex;
+  min-height: 32px;
   min-width: 0;
   align-items: center;
   justify-content: space-between;
@@ -1125,12 +1127,20 @@ button.sync-device-row.is-selected {
 
 .transfer-status {
   display: inline-flex;
+  min-height: 32px;
   flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 620;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.transfer-status svg {
+  display: block;
+  flex: 0 0 auto;
 }
 
 .transfer-status--transferring,
@@ -1187,8 +1197,10 @@ button.sync-device-row.is-selected {
 
 .transfer-actions {
   display: flex;
+  min-height: 32px;
   min-width: 32px;
-  align-items: flex-start;
+  align-items: center;
+  align-content: flex-start;
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 2px;

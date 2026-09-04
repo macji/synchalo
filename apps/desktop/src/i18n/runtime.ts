@@ -87,6 +87,12 @@ export function localizeTransferError(message: string, t: Translate): string {
   if (normalized.includes("space") || message.includes("空间不足")) {
     return t("errors.diskFull");
   }
+  if (
+    normalized.includes("stopped before this transfer completed")
+    || normalized.includes("verified data can be resumed")
+  ) {
+    return t("errors.transferInterrupted");
+  }
   return t("errors.transferFailed");
 }
 

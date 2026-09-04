@@ -56,6 +56,8 @@ const KEY_ENCRYPTION_KEY_ACCOUNT: &str = "local-key-encryption-key-v1";
 const LEGACY_DATA_KEY_ACCOUNT: &str = "local-data-key";
 const TRANSPORT_CREDENTIALS_ACCOUNT: &str = "transport-credentials-v1";
 const DEVICE_REFRESH_SETTLE_TIME: Duration = Duration::from_millis(900);
+const TRANSFER_INTERRUPTED_MESSAGE: &str =
+    "the application stopped before this transfer completed; retry to resume verified data";
 
 struct KeyBootstrap {
     key_encryption_key: Zeroizing<[u8; 32]>,
@@ -128,6 +130,7 @@ impl AppRuntime {
             })?
         };
         let database = Arc::new(database);
+        recover_interrupted_transfers(&database)?;
         let identity = database.load_or_create_identity(&device_name)?;
         let defaults = SettingsView {
             device_name: identity.display_name.clone(),
@@ -696,6 +699,7 @@ impl AppRuntime {
                 state,
                 progress: 0.0,
                 created_at: Utc::now(),
+                source_device_id: Some(self.identity.read().device_id),
                 source_device_name: Some(self.identity.read().display_name.clone()),
                 targets: targets
                     .iter()
@@ -764,6 +768,37 @@ impl AppRuntime {
 
     pub async fn retry_transfer(self: &Arc<Self>, id: Uuid) -> Result<TransferView, AppError> {
         let mut transfer = self.transfer(id)?;
+        if !matches!(
+            transfer.state,
+            TransferState::Failed | TransferState::Cancelled
+        ) {
+            return Err(AppError::InvalidInput(
+                "only failed or cancelled transfers can be retried".to_owned(),
+            ));
+        }
+        if transfer.direction == TransferDirection::Receiving {
+            let source_device_id = transfer.source_device_id.ok_or_else(|| {
+                AppError::File("the original source device is unavailable".to_owned())
+            })?;
+            if !self.transport.online_peer_ids().contains(&source_device_id) {
+                return Err(AppError::Network("source device is offline".to_owned()));
+            }
+            transfer.state = TransferState::Queued;
+            transfer.error = None;
+            transfer.bytes_per_second = None;
+            transfer.eta_seconds = None;
+            self.database.upsert_transfer(&transfer)?;
+            let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
+            if let Err(error) = self
+                .transport
+                .request_file_retry(source_device_id, transfer.id)
+                .await
+            {
+                self.fail_file_transfer(transfer.id, source_device_id, error.to_string(), true)?;
+                return Err(error);
+            }
+            return self.transfer(id);
+        }
         if transfer.targets.is_empty() {
             return Err(AppError::NoSyncDevices);
         }
@@ -772,6 +807,9 @@ impl AppRuntime {
             .targets
             .iter_mut()
             .filter_map(|target| {
+                if target.state == TransferState::Completed {
+                    return None;
+                }
                 target.progress = 0.0;
                 target.bytes_per_second = None;
                 if online.contains(&target.device_id) {
@@ -785,10 +823,17 @@ impl AppRuntime {
                 }
             })
             .collect();
-        transfer.progress = 0.0;
+        transfer.progress = aggregate_progress(&transfer.targets);
         transfer.bytes_per_second = None;
         transfer.eta_seconds = None;
-        if target_ids.is_empty() {
+        if transfer
+            .targets
+            .iter()
+            .all(|target| target.state == TransferState::Completed)
+        {
+            transfer.state = TransferState::Completed;
+            transfer.error = None;
+        } else if target_ids.is_empty() {
             transfer.state = TransferState::Failed;
             transfer.error = Some("目标设备当前离线，文件未发送".to_owned());
         } else {
@@ -835,7 +880,16 @@ impl AppRuntime {
         Ok(transfer)
     }
 
-    pub fn cancel_transfer(&self, id: Uuid) -> Result<TransferView, AppError> {
+    pub fn cancel_transfer(self: &Arc<Self>, id: Uuid) -> Result<TransferView, AppError> {
+        let current = self.transfer(id)?;
+        if !matches!(
+            current.state,
+            TransferState::Queued | TransferState::Transferring | TransferState::Verifying
+        ) {
+            return Err(AppError::InvalidInput(
+                "only active transfers can be cancelled".to_owned(),
+            ));
+        }
         let keys: Vec<_> = self
             .transfer_tasks
             .lock()
@@ -848,6 +902,21 @@ impl AppRuntime {
                 handle.abort();
             }
         }
+        let peers: Vec<_> = if current.direction == TransferDirection::Receiving {
+            current.source_device_id.into_iter().collect()
+        } else {
+            current
+                .targets
+                .iter()
+                .filter(|target| target.state != TransferState::Completed)
+                .map(|target| target.device_id)
+                .collect()
+        };
+        if current.direction == TransferDirection::Receiving {
+            for peer_id in &peers {
+                self.transport.cancel_incoming_file(*peer_id, id);
+            }
+        }
         let mut transfer = self.update_transfer_state(id, TransferState::Cancelled)?;
         for target in &mut transfer.targets {
             if target.state != TransferState::Completed {
@@ -857,7 +926,98 @@ impl AppRuntime {
         }
         self.database.upsert_transfer(&transfer)?;
         let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
+        let transport = self.transport.clone();
+        tauri::async_runtime::spawn(async move {
+            for peer_id in peers {
+                if let Err(error) = transport.request_file_cancel(peer_id, id).await {
+                    tracing::debug!(%peer_id, %error, "file cancellation notification failed");
+                }
+            }
+        });
         Ok(transfer)
+    }
+
+    fn retry_transfer_for_peer(self: &Arc<Self>, id: Uuid, peer_id: Uuid) -> Result<(), AppError> {
+        if !self.transport.online_peer_ids().contains(&peer_id) {
+            return Err(AppError::Network("requesting device is offline".to_owned()));
+        }
+        if self.transfer_tasks.lock().contains_key(&(id, peer_id)) {
+            return Err(AppError::File(
+                "this file transfer is already active".to_owned(),
+            ));
+        }
+        let mut transfer = self.transfer(id)?;
+        if transfer.direction != TransferDirection::Sending {
+            return Err(AppError::InvalidInput(
+                "retry request does not refer to a sent file".to_owned(),
+            ));
+        }
+        let target = transfer
+            .targets
+            .iter_mut()
+            .find(|target| target.device_id == peer_id)
+            .ok_or_else(|| {
+                AppError::InvalidInput("requesting device was not a transfer target".to_owned())
+            })?;
+        target.state = TransferState::Queued;
+        target.error = None;
+        target.bytes_per_second = None;
+        transfer.state = TransferState::Queued;
+        transfer.error = None;
+        transfer.bytes_per_second = None;
+        transfer.eta_seconds = None;
+        self.database.upsert_transfer(&transfer)?;
+        let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
+        self.launch_file_transfer(id, peer_id)
+    }
+
+    fn apply_remote_file_cancel(self: &Arc<Self>, id: Uuid, peer_id: Uuid) -> Result<(), AppError> {
+        let mut transfer = self.transfer(id)?;
+        if transfer.state == TransferState::Completed {
+            return Ok(());
+        }
+        match transfer.direction {
+            TransferDirection::Receiving => {
+                if transfer.source_device_id != Some(peer_id) {
+                    return Err(AppError::InvalidInput(
+                        "cancellation sender does not match the file source".to_owned(),
+                    ));
+                }
+                self.transport.cancel_incoming_file(peer_id, id);
+                transfer.state = TransferState::Cancelled;
+                transfer.error = None;
+                transfer.bytes_per_second = None;
+                transfer.eta_seconds = None;
+            }
+            TransferDirection::Sending => {
+                let target = transfer
+                    .targets
+                    .iter_mut()
+                    .find(|target| target.device_id == peer_id)
+                    .ok_or_else(|| {
+                        AppError::InvalidInput(
+                            "cancellation sender was not a transfer target".to_owned(),
+                        )
+                    })?;
+                if let Some(handle) = self.transfer_tasks.lock().remove(&(id, peer_id)) {
+                    handle.abort();
+                }
+                if target.state != TransferState::Completed {
+                    target.state = TransferState::Cancelled;
+                    target.error = None;
+                    target.bytes_per_second = None;
+                }
+                transfer.progress = aggregate_progress(&transfer.targets);
+                transfer.state = aggregate_transfer_state(&transfer.targets);
+                transfer.error = transfer
+                    .targets
+                    .iter()
+                    .find_map(|target| target.error.clone());
+            }
+        }
+        self.database.upsert_transfer(&transfer)?;
+        let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
+        Ok(())
     }
 
     fn launch_file_transfer(
@@ -1067,7 +1227,14 @@ impl AppRuntime {
                     TransportEvent::IncomingFileStarted {
                         from_device_id,
                         manifest,
-                    } => runtime.record_incoming_file(from_device_id, manifest),
+                        respond_to,
+                    } => {
+                        let response = runtime
+                            .record_incoming_file(from_device_id, manifest)
+                            .map_err(|error| error.to_string());
+                        let _ = respond_to.send(response);
+                        Ok(())
+                    }
                     TransportEvent::FileProgress {
                         transfer_id,
                         peer_device_id,
@@ -1083,6 +1250,11 @@ impl AppRuntime {
                         bytes_per_second,
                         incoming,
                     ),
+                    TransportEvent::FileVerifying {
+                        transfer_id,
+                        peer_device_id,
+                        incoming,
+                    } => runtime.update_file_verifying(transfer_id, peer_device_id, incoming),
                     TransportEvent::FileCompleted {
                         transfer_id,
                         peer_device_id,
@@ -1097,6 +1269,21 @@ impl AppRuntime {
                         error,
                         incoming,
                     } => runtime.fail_file_transfer(transfer_id, peer_device_id, error, incoming),
+                    TransportEvent::FileRetryRequested {
+                        from_device_id,
+                        transfer_id,
+                        respond_to,
+                    } => {
+                        let response = runtime
+                            .retry_transfer_for_peer(transfer_id, from_device_id)
+                            .map_err(|error| error.to_string());
+                        let _ = respond_to.send(response);
+                        Ok(())
+                    }
+                    TransportEvent::FileCancelRequested {
+                        from_device_id,
+                        transfer_id,
+                    } => runtime.apply_remote_file_cancel(transfer_id, from_device_id),
                     TransportEvent::Error(message) => {
                         tracing::debug!(%message, "transport event error");
                         Ok(())
@@ -1378,28 +1565,67 @@ impl AppRuntime {
             .transport
             .trusted_peer(from_device_id)
             .ok_or_else(|| AppError::Network("file sender is not trusted".to_owned()))?;
+        let existing = self.database.get_transfer(manifest.id)?;
+        if existing
+            .as_ref()
+            .is_some_and(|transfer| transfer.state == TransferState::Cancelled)
+        {
+            self.transport
+                .cancel_incoming_file(from_device_id, manifest.id);
+            return Err(AppError::File(
+                "the incoming transfer was cancelled".to_owned(),
+            ));
+        }
+        if existing.as_ref().is_some_and(|transfer| {
+            transfer.direction != TransferDirection::Receiving
+                || transfer
+                    .source_device_id
+                    .is_some_and(|id| id != from_device_id)
+        }) {
+            self.transport
+                .cancel_incoming_file(from_device_id, manifest.id);
+            return Err(AppError::InvalidInput(
+                "incoming transfer identity conflicts with local history".to_owned(),
+            ));
+        }
+        let created_at = existing
+            .as_ref()
+            .map(|transfer| transfer.created_at)
+            .unwrap_or_else(Utc::now);
+        let pinned = existing.as_ref().is_some_and(|transfer| transfer.pinned);
+        let progress = existing
+            .as_ref()
+            .map(|transfer| transfer.progress)
+            .unwrap_or(0.0);
+        let display_path = existing
+            .as_ref()
+            .and_then(|transfer| transfer.display_path.clone())
+            .or_else(|| {
+                Some(
+                    PathBuf::from(&self.settings.read().receive_directory)
+                        .join(&manifest.file_name)
+                        .to_string_lossy()
+                        .into_owned(),
+                )
+            });
         let transfer = TransferView {
             id: manifest.id,
             file_name: manifest.file_name.clone(),
             file_size: manifest.file_size,
             direction: TransferDirection::Receiving,
             state: TransferState::Transferring,
-            progress: 0.0,
-            created_at: Utc::now(),
+            progress,
+            created_at,
+            source_device_id: Some(from_device_id),
             source_device_name: Some(peer.device_name),
             targets: Vec::new(),
             bytes_per_second: None,
             eta_seconds: None,
-            display_path: Some(
-                PathBuf::from(&self.settings.read().receive_directory)
-                    .join(&manifest.file_name)
-                    .to_string_lossy()
-                    .into_owned(),
-            ),
+            display_path,
             error: None,
             content_hash: Some(manifest.blake3),
             source_modified_unix_ms: manifest.modified_unix_ms,
-            pinned: false,
+            pinned,
         };
         self.database.upsert_transfer(&transfer)?;
         let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
@@ -1416,6 +1642,12 @@ impl AppRuntime {
         incoming: bool,
     ) -> Result<(), AppError> {
         let mut transfer = self.transfer(transfer_id)?;
+        if matches!(
+            transfer.state,
+            TransferState::Cancelled | TransferState::Completed
+        ) {
+            return Ok(());
+        }
         let progress = if total == 0 {
             1.0
         } else {
@@ -1444,6 +1676,37 @@ impl AppRuntime {
         Ok(())
     }
 
+    fn update_file_verifying(
+        &self,
+        transfer_id: Uuid,
+        peer_device_id: Uuid,
+        incoming: bool,
+    ) -> Result<(), AppError> {
+        let mut transfer = self.transfer(transfer_id)?;
+        if matches!(
+            transfer.state,
+            TransferState::Cancelled | TransferState::Completed
+        ) {
+            return Ok(());
+        }
+        transfer.bytes_per_second = None;
+        transfer.eta_seconds = None;
+        if incoming {
+            transfer.state = TransferState::Verifying;
+        } else if let Some(target) = transfer
+            .targets
+            .iter_mut()
+            .find(|target| target.device_id == peer_device_id)
+        {
+            target.state = TransferState::Verifying;
+            target.bytes_per_second = None;
+            transfer.state = aggregate_transfer_state(&transfer.targets);
+        }
+        self.database.upsert_transfer(&transfer)?;
+        let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
+        Ok(())
+    }
+
     fn complete_file_transfer(
         &self,
         transfer_id: Uuid,
@@ -1452,6 +1715,9 @@ impl AppRuntime {
         incoming: bool,
     ) -> Result<(), AppError> {
         let mut transfer = self.transfer(transfer_id)?;
+        if transfer.state == TransferState::Cancelled {
+            return Ok(());
+        }
         transfer.error = None;
         transfer.bytes_per_second = None;
         transfer.eta_seconds = None;
@@ -1473,21 +1739,7 @@ impl AppRuntime {
                 target.error = None;
             }
             transfer.progress = aggregate_progress(&transfer.targets);
-            transfer.state = if transfer
-                .targets
-                .iter()
-                .all(|target| target.state == TransferState::Completed)
-            {
-                TransferState::Completed
-            } else if transfer
-                .targets
-                .iter()
-                .any(|target| target.state == TransferState::Failed)
-            {
-                TransferState::Failed
-            } else {
-                TransferState::Transferring
-            };
+            transfer.state = aggregate_transfer_state(&transfer.targets);
             transfer.error = if transfer.state == TransferState::Failed {
                 transfer
                     .targets
@@ -1526,6 +1778,15 @@ impl AppRuntime {
         incoming: bool,
     ) -> Result<(), AppError> {
         let mut transfer = self.transfer(transfer_id)?;
+        if matches!(
+            transfer.state,
+            TransferState::Cancelled | TransferState::Completed
+        ) {
+            return Ok(());
+        }
+        if incoming != (transfer.direction == TransferDirection::Receiving) {
+            return Ok(());
+        }
         transfer.error = Some(error.clone());
         transfer.bytes_per_second = None;
         transfer.eta_seconds = None;
@@ -1539,7 +1800,7 @@ impl AppRuntime {
             target.state = TransferState::Failed;
             target.error = Some(error);
             target.bytes_per_second = None;
-            transfer.state = TransferState::Failed;
+            transfer.state = aggregate_transfer_state(&transfer.targets);
         }
         self.database.upsert_transfer(&transfer)?;
         let _ = self.app.emit(EVENT_TRANSFER_CHANGED, &transfer);
@@ -1877,6 +2138,72 @@ fn aggregate_progress(targets: &[TransferTargetView]) -> f32 {
     targets.iter().map(|target| target.progress).sum::<f32>() / targets.len() as f32
 }
 
+fn aggregate_transfer_state(targets: &[TransferTargetView]) -> TransferState {
+    if targets.is_empty() {
+        return TransferState::Failed;
+    }
+    if targets
+        .iter()
+        .all(|target| target.state == TransferState::Completed)
+    {
+        return TransferState::Completed;
+    }
+    if targets
+        .iter()
+        .any(|target| target.state == TransferState::Transferring)
+    {
+        return TransferState::Transferring;
+    }
+    if targets
+        .iter()
+        .any(|target| target.state == TransferState::Verifying)
+    {
+        return TransferState::Verifying;
+    }
+    if targets
+        .iter()
+        .any(|target| target.state == TransferState::Queued)
+    {
+        return TransferState::Queued;
+    }
+    if targets
+        .iter()
+        .any(|target| target.state == TransferState::Failed)
+    {
+        return TransferState::Failed;
+    }
+    TransferState::Cancelled
+}
+
+fn recover_interrupted_transfers(database: &Database) -> Result<usize, AppError> {
+    let mut recovered = 0;
+    for mut transfer in database.list_active_transfers()? {
+        if !matches!(
+            transfer.state,
+            TransferState::Queued | TransferState::Transferring | TransferState::Verifying
+        ) {
+            continue;
+        }
+        transfer.state = TransferState::Failed;
+        transfer.error = Some(TRANSFER_INTERRUPTED_MESSAGE.to_owned());
+        transfer.bytes_per_second = None;
+        transfer.eta_seconds = None;
+        for target in &mut transfer.targets {
+            if matches!(
+                target.state,
+                TransferState::Queued | TransferState::Transferring | TransferState::Verifying
+            ) {
+                target.state = TransferState::Failed;
+                target.error = Some(TRANSFER_INTERRUPTED_MESSAGE.to_owned());
+                target.bytes_per_second = None;
+            }
+        }
+        database.upsert_transfer(&transfer)?;
+        recovered += 1;
+    }
+    Ok(recovered)
+}
+
 async fn manifest_from_transfer(
     transfer: &TransferView,
     path: &Path,
@@ -2057,6 +2384,79 @@ mod tests {
         assert!(is_consecutive_clipboard_duplicate(Some("same"), "same"));
         assert!(!is_consecutive_clipboard_duplicate(Some("older"), "newer"));
         assert!(!is_consecutive_clipboard_duplicate(None, "first"));
+    }
+
+    #[test]
+    fn interrupted_transfers_become_retryable_after_restart() {
+        let database = Database::open_in_memory([47_u8; 32], None).unwrap();
+        let peer_id = Uuid::new_v4();
+        let transfer_id = Uuid::new_v4();
+        database
+            .upsert_transfer(&TransferView {
+                id: transfer_id,
+                file_name: "resume.bin".to_owned(),
+                file_size: 128,
+                direction: TransferDirection::Sending,
+                state: TransferState::Verifying,
+                progress: 0.75,
+                created_at: Utc::now(),
+                source_device_id: Some(Uuid::new_v4()),
+                source_device_name: Some("Test device".to_owned()),
+                targets: vec![TransferTargetView {
+                    device_id: peer_id,
+                    device_name: "Peer".to_owned(),
+                    state: TransferState::Transferring,
+                    progress: 0.75,
+                    bytes_per_second: Some(1_024),
+                    error: None,
+                }],
+                bytes_per_second: Some(1_024),
+                eta_seconds: Some(1),
+                display_path: Some("/tmp/resume.bin".to_owned()),
+                error: None,
+                content_hash: Some("0".repeat(64)),
+                source_modified_unix_ms: None,
+                pinned: false,
+            })
+            .unwrap();
+
+        assert_eq!(recover_interrupted_transfers(&database).unwrap(), 1);
+        let recovered = database.get_transfer(transfer_id).unwrap().unwrap();
+        assert_eq!(recovered.state, TransferState::Failed);
+        assert_eq!(recovered.targets[0].state, TransferState::Failed);
+        assert_eq!(
+            recovered.error.as_deref(),
+            Some(TRANSFER_INTERRUPTED_MESSAGE)
+        );
+        assert!(recovered.bytes_per_second.is_none());
+        assert!(recovered.eta_seconds.is_none());
+    }
+
+    #[test]
+    fn aggregate_transfer_state_keeps_other_targets_active() {
+        let target = |state| TransferTargetView {
+            device_id: Uuid::new_v4(),
+            device_name: "Peer".to_owned(),
+            state,
+            progress: 0.0,
+            bytes_per_second: None,
+            error: None,
+        };
+
+        assert_eq!(
+            aggregate_transfer_state(&[
+                target(TransferState::Failed),
+                target(TransferState::Transferring),
+            ]),
+            TransferState::Transferring
+        );
+        assert_eq!(
+            aggregate_transfer_state(&[
+                target(TransferState::Completed),
+                target(TransferState::Cancelled),
+            ]),
+            TransferState::Cancelled
+        );
     }
 
     fn test_device(connection_state: DeviceConnectionState, is_current: bool) -> DeviceView {

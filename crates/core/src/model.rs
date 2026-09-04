@@ -153,6 +153,8 @@ pub struct TransferView {
     pub state: TransferState,
     pub progress: f32,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub source_device_id: Option<Uuid>,
     pub source_device_name: Option<String>,
     pub targets: Vec<TransferTargetView>,
     pub bytes_per_second: Option<u64>,

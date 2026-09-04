@@ -113,6 +113,23 @@ def main() -> None:
         drop_zone = page.get_by_role("button", name="拖入文件或选择文件")
         assert drop_zone.is_visible()
         assert page.get_by_role("button", name="只看收藏文件").is_visible()
+        active_transfer = page.locator(".transfer-row").filter(has_text="SyncHalo-design.zip")
+        transfer_status_box = active_transfer.locator(".transfer-status").bounding_box()
+        transfer_action_boxes = active_transfer.locator(
+            ".transfer-actions .icon-button"
+        ).evaluate_all(
+            "elements => elements.map(element => element.getBoundingClientRect().toJSON())"
+        )
+        assert transfer_status_box is not None
+        transfer_status_center = (
+            transfer_status_box["y"] + transfer_status_box["height"] / 2
+        )
+        assert transfer_status_box["height"] == 32
+        assert len(transfer_action_boxes) == 3
+        assert all(
+            abs((box["y"] + box["height"] / 2) - transfer_status_center) <= 0.5
+            for box in transfer_action_boxes
+        )
         page.screenshot(path=ARTIFACTS / "files-light.png", full_page=True)
 
         page.get_by_role("button", name="显示同步码").click()

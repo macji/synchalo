@@ -767,6 +767,26 @@ impl Database {
             .collect()
     }
 
+    pub fn list_active_transfers(&self) -> Result<Vec<TransferView>, AppError> {
+        let connection = self.connection.lock();
+        let mut statement = connection
+            .prepare(
+                "SELECT state_json FROM transfers
+                 WHERE json_extract(state_json, '$.state') IN
+                       ('queued', 'transferring', 'verifying')
+                 ORDER BY created_at_ms DESC",
+            )
+            .map_err(storage_error)?;
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(storage_error)?
+            .map(|row| {
+                let json = row.map_err(storage_error)?;
+                serde_json::from_str(&json).map_err(storage_error)
+            })
+            .collect()
+    }
+
     pub fn get_transfer(&self, id: Uuid) -> Result<Option<TransferView>, AppError> {
         let json: Option<String> = self
             .connection
@@ -1487,6 +1507,7 @@ mod tests {
         }))
         .unwrap();
         assert!(!transfer.pinned);
+        assert!(transfer.source_device_id.is_none());
 
         transfer.pinned = true;
         let database = database();
@@ -1530,6 +1551,7 @@ mod tests {
             created_at: Utc
                 .timestamp_millis_opt(1_700_000_000_000 + i64::from(index))
                 .unwrap(),
+            source_device_id: Some(Uuid::new_v4()),
             source_device_name: Some("Test Mac".to_owned()),
             targets: Vec::new(),
             bytes_per_second: None,
