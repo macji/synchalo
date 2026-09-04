@@ -36,10 +36,9 @@
   --success-border: #9ecfaf;
   --shadow-popover: 0 12px 32px rgb(28 35 50 / 14%), 0 2px 8px rgb(28 35 50 / 8%);
   --shadow-dialog: 0 24px 72px rgb(20 27 40 / 24%), 0 4px 16px rgb(20 27 40 / 10%);
-  --window-frame-border: rgb(31 39 54 / 22%);
-  --window-frame-shadow: 0 10px 28px rgb(22 29 43 / 26%), 0 2px 8px rgb(22 29 43 / 18%);
-  --window-frame-gutter: 14px;
-  --window-frame-gutter-total: 28px;
+  --window-frame-border: rgb(31 39 54 / 16%);
+  --window-frame-shadow: 0 12px 28px rgb(22 29 43 / 18%), 0 2px 8px rgb(22 29 43 / 11%);
+  --window-frame-gutter: 20px;
   --window-frame-radius: 16px;
   --sidebar-width: 224px;
   --header-height: 76px;
@@ -82,8 +81,8 @@
     --success-border: #356c49;
     --shadow-popover: 0 16px 38px rgb(0 0 0 / 38%), 0 2px 8px rgb(0 0 0 / 28%);
     --shadow-dialog: 0 28px 84px rgb(0 0 0 / 52%), 0 4px 18px rgb(0 0 0 / 38%);
-    --window-frame-border: rgb(255 255 255 / 16%);
-    --window-frame-shadow: 0 12px 30px rgb(0 0 0 / 58%), 0 2px 9px rgb(0 0 0 / 46%);
+    --window-frame-border: rgb(255 255 255 / 13%);
+    --window-frame-shadow: 0 12px 30px rgb(0 0 0 / 42%), 0 2px 9px rgb(0 0 0 / 28%);
   }
 }
 

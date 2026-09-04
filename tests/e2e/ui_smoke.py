@@ -282,6 +282,39 @@ def main() -> None:
         page.screenshot(path=ARTIFACTS / "update-ready-dark.png", full_page=True)
         ready_dialog.get_by_role("button", name="稍后").click()
 
+        page.emulate_media(color_scheme="light")
+        page.set_viewport_size({"width": 1120, "height": 760})
+        page.locator(".nav-item").filter(has_text="同步文件").click()
+        page.locator(".window-frame").evaluate(
+            """element => {
+              element.dataset.platform = 'linux';
+              element.dataset.windowMaximized = 'false';
+            }"""
+        )
+        page.screenshot(path=ARTIFACTS / "linux-window-frame.png", full_page=True)
+        page.set_viewport_size({"width": 840, "height": 540})
+        root_metrics = page.evaluate(
+            """() => ({
+              clientWidth: document.documentElement.clientWidth,
+              scrollWidth: document.documentElement.scrollWidth,
+              clientHeight: document.documentElement.clientHeight,
+              scrollHeight: document.documentElement.scrollHeight,
+            })"""
+        )
+        assert root_metrics == {
+            "clientWidth": 840,
+            "scrollWidth": 840,
+            "clientHeight": 540,
+            "scrollHeight": 540,
+        }
+        linux_frame = page.locator(".window-frame").bounding_box()
+        assert linux_frame == {"x": 20, "y": 20, "width": 800, "height": 500}
+        page.locator(".window-frame").evaluate(
+            "element => { element.dataset.windowMaximized = 'true'; }"
+        )
+        maximized_frame = page.locator(".window-frame").bounding_box()
+        assert maximized_frame == {"x": 0, "y": 0, "width": 840, "height": 540}
+
         browser.close()
 
     if console_errors:
