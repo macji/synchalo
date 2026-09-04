@@ -68,7 +68,7 @@
 }
 
 .window-frame[data-platform="macos"] .sidebar {
-  padding-top: 64px;
+  padding-top: 52px;
 }
 
 .brand-block {
@@ -242,6 +242,7 @@
   display: flex;
   height: var(--header-height);
   padding: 0 24px;
+  border-bottom: 1px solid var(--border);
   align-items: center;
   justify-content: space-between;
   gap: 24px;

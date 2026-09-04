@@ -38,10 +38,13 @@ def main() -> None:
         assert page.locator(".sidebar").evaluate(
             "element => getComputedStyle(element).borderRightStyle"
         ) == "none"
+        assert page.locator(".sidebar").evaluate(
+            "element => getComputedStyle(element).paddingTop"
+        ) == "52px"
         page.get_by_role("heading", name="粘贴板历史").wait_for()
         assert page.locator(".clipboard-page .page-header").evaluate(
             "element => getComputedStyle(element).borderBottomStyle"
-        ) == "none"
+        ) == "solid"
         assert page.get_by_role("navigation", name="主导航").is_visible()
         assert page.locator(".clipboard-page .page-header").get_by_role(
             "button", name="暂停同步"
