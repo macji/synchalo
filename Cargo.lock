@@ -4897,7 +4897,7 @@ dependencies = [
 
 [[package]]
 name = "synchalo-core"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "blake3",
  "chrono",
@@ -4909,7 +4909,7 @@ dependencies = [
 
 [[package]]
 name = "synchalo-desktop"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -4943,7 +4943,7 @@ dependencies = [
 
 [[package]]
 name = "synchalo-network"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "base64 0.22.1",
  "blake3",
@@ -4971,7 +4971,7 @@ dependencies = [
 
 [[package]]
 name = "synchalo-platform"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "arboard",
  "chrono",
@@ -4988,7 +4988,7 @@ dependencies = [
 
 [[package]]
 name = "synchalo-storage"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "base64 0.22.1",
  "chacha20poly1305",
@@ -5005,7 +5005,7 @@ dependencies = [
 
 [[package]]
 name = "synchalo-transfer"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "blake3",
  "chrono",

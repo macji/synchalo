@@ -237,7 +237,7 @@ def main() -> None:
         page.get_by_role("button", name="检查更新").click()
         available_dialog = page.get_by_role("dialog", name="发现新版本")
         available_dialog.wait_for()
-        assert available_dialog.get_by_text("SyncHalo 0.1.8").is_visible()
+        assert available_dialog.get_by_text(f"SyncHalo {APP_VERSION}").is_visible()
         assert available_dialog.get_by_text("更新提醒支持发布说明", exact=False).is_visible()
         assert available_dialog.get_by_role("button", name="立即更新").is_visible()
         page.screenshot(path=ARTIFACTS / "update-available-light.png", full_page=True)
@@ -246,7 +246,7 @@ def main() -> None:
         page.get_by_role("button", name="检查更新").click()
         reopened_dialog = page.get_by_role("dialog", name="发现新版本")
         reopened_dialog.wait_for()
-        assert reopened_dialog.get_by_text("SyncHalo 0.1.8").is_visible()
+        assert reopened_dialog.get_by_text(f"SyncHalo {APP_VERSION}").is_visible()
         reopened_dialog.get_by_role("button", name="忽略此版本").click()
 
         page.goto(f"{BASE_URL}?mockUpdate=ready")

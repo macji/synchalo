@@ -249,7 +249,7 @@ export const api = {
     if (mockUpdate === "available" || mockUpdate === "ready") {
       return {
         state: mockUpdate,
-        version: "0.1.8",
+        version: desktopPackage.version,
         notes: "- 更新提醒支持发布说明\n- 自动下载后由用户确认安装\n- 改进局域网同步稳定性",
         message: null,
       };
