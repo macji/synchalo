@@ -12,8 +12,11 @@ use tauri_plugin_opener::OpenerExt as _;
 use uuid::Uuid;
 
 use crate::{
-    UpdateCoordinator, UpdateStatus, check_for_updates_manually, ignore_pending_update,
-    install_pending_update, runtime::AppRuntime,
+    UpdateCoordinator, UpdateStatus, check_for_updates_manually,
+    i18n::{NativeText, text},
+    ignore_pending_update, install_pending_update,
+    runtime::AppRuntime,
+    tray,
 };
 
 type CommandResult<T> = Result<T, UserFacingError>;
@@ -169,6 +172,7 @@ pub async fn update_settings(
     patch: SettingsPatch,
 ) -> CommandResult<SettingsView> {
     let launch_at_startup = patch.launch_at_startup;
+    let language_changed = patch.language.is_some();
     if let Some(enabled) = launch_at_startup {
         let result = if enabled {
             app.autolaunch().enable()
@@ -183,7 +187,19 @@ pub async fn update_settings(
             .detail(error.to_string())
         })?;
     }
-    state.update_settings(patch).map_err(UserFacingError::from)
+    let settings = state
+        .update_settings(patch)
+        .map_err(UserFacingError::from)?;
+    if language_changed {
+        tray::refresh(&app, state.inner()).map_err(|error| {
+            UserFacingError::new(
+                synchalo_core::ErrorCode::Internal,
+                "failed to refresh the system tray",
+            )
+            .detail(error.to_string())
+        })?;
+    }
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -232,7 +248,12 @@ pub async fn select_receive_directory(
     app: AppHandle,
     state: State<'_, Arc<AppRuntime>>,
 ) -> CommandResult<Option<SettingsView>> {
-    let selected = app.dialog().file().blocking_pick_folder();
+    let language = state.settings().language;
+    let selected = app
+        .dialog()
+        .file()
+        .set_title(text(language, NativeText::SelectReceiveFolder))
+        .blocking_pick_folder();
     let Some(selected) = selected else {
         return Ok(None);
     };
@@ -260,7 +281,7 @@ pub async fn select_files(
         .dialog()
         .file()
         .set_parent(&window)
-        .set_title("选择要同步的文件")
+        .set_title(text(state.settings().language, NativeText::SelectFiles))
         .blocking_pick_files()
         .unwrap_or_default()
         .into_iter()

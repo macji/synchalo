@@ -84,13 +84,13 @@ Keep these versions identical before tagging:
 Commit and push the version change, then validate without creating a tag:
 
 ```bash
-scripts/release.sh 0.1.7 --dry-run
+scripts/release.sh 0.1.8 --dry-run
 ```
 
 Trigger the release:
 
 ```bash
-scripts/release-all.sh 0.1.7
+scripts/release-all.sh 0.1.8
 ```
 
 For a faster non-publishing platform build, open **Actions → Publish Linux and Windows Release → Run workflow**, set `ref` to `main` (or another branch, tag, or commit), then choose `linux`, `windows`, or `validate-only`. The `linux` target builds both Ubuntu architectures in parallel. Choose `all` only with a matching version tag when the manual run should create or update the complete GitHub Release.

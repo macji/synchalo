@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, Info, X } from "lucide-react";
 
 import { IconButton } from "./IconButton";
+import { useI18n } from "../i18n";
 
 export interface ToastView {
   id: string;
@@ -15,6 +16,7 @@ interface ToastRegionProps {
 }
 
 export function ToastRegion({ toasts, onDismiss }: ToastRegionProps) {
+  const { t } = useI18n();
   return (
     <div aria-live="polite" aria-relevant="additions" className="toast-region">
       {toasts.map((toast) => {
@@ -38,7 +40,7 @@ export function ToastRegion({ toasts, onDismiss }: ToastRegionProps) {
             ) : null}
             <IconButton
               icon={<X size={15} />}
-              label="关闭提示"
+              label={t("common.closeNotification")}
               onClick={() => onDismiss(toast.id)}
             />
           </div>

@@ -6,8 +6,8 @@ usage() {
 Usage: scripts/release.sh <version|tag> [--dry-run]
 
 Examples:
-  scripts/release.sh 0.1.7 --dry-run
-  scripts/release.sh v0.1.7
+  scripts/release.sh 0.1.8 --dry-run
+  scripts/release.sh v0.1.8
 
 The version must already match Cargo.toml, package.json,
 apps/desktop/package.json, and apps/desktop/src-tauri/tauri.conf.json.

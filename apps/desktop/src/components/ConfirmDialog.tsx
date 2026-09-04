@@ -2,6 +2,7 @@ import { AlertTriangle } from "lucide-react";
 import { useRef } from "react";
 
 import { ModalDialog } from "./ModalDialog";
+import { useI18n } from "../i18n";
 
 export interface ConfirmState {
   title: string;
@@ -18,6 +19,7 @@ interface ConfirmDialogProps {
 }
 
 export function ConfirmDialog({ state, onClose }: ConfirmDialogProps) {
+  const { t } = useI18n();
   const confirmRef = useRef<HTMLButtonElement>(null);
 
   if (!state) return null;
@@ -30,7 +32,7 @@ export function ConfirmDialog({ state, onClose }: ConfirmDialogProps) {
       actions={
         <>
           <button className="button button--secondary" onClick={cancel} type="button">
-            取消
+            {t("common.cancel")}
           </button>
           <button
             className={`button ${state.danger ? "button--danger" : "button--primary"}`}

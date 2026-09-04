@@ -1,60 +1,61 @@
 # SyncHalo
 
-SyncHalo 是一款本地优先的局域网剪贴板与文件同步工具。它不需要账号、云盘或公网中继，只在用户明确配对的可信设备之间传输数据。
+SyncHalo is a local-first clipboard and file synchronization tool for devices on the same local network. It requires no account, cloud storage, or public relay and transfers data only between devices that the user explicitly trusts.
 
-[下载最新版本](https://github.com/macji/synchalo/releases/latest) · [APT 软件源](https://macji.github.io/synchalo/apt) · [安全策略](SECURITY.md) · [产品设计](PRD.md)
+[Download the latest release](https://github.com/macji/synchalo/releases/latest) · [APT repository](https://macji.github.io/synchalo/apt) · [Security policy](SECURITY.md) · [Product specification](PRD.md)
 
-## 产品功能
+## Features
 
-- 在同一局域网内通过 mDNS 自动发现设备，并可随时刷新发现和重连状态。
-- 使用 60 秒一次性同步码配对；新设备仍需由已有设备确认后才能加入。
-- 在可信设备之间实时同步纯文本剪贴板，并抑制远端写入造成的同步回环。
-- 支持拖放、文件选择和页面内粘贴发送文件；未指定目标时发送给全部在线设备。
-- 文件传输支持流式传输、断点续传、BLAKE3 完整性校验、临时文件和原子提交。
-- 提供剪贴板历史、文件历史、搜索、收藏、再次同步和后端分页。
-- 删除同步与收藏同步可独立开启，默认关闭。
-- 支持托盘驻留、暂停同步、开机启动、自定义接收目录和设备管理。
-- 启动约 5 秒后检查更新，之后每 30 分钟检查一次，也可手动检查。
-- 忽略版本只停止启动和定时提醒；手动检查仍会重新显示该版本。
-- macOS 和 Windows 可后台下载验签并等待确认安装；Ubuntu 在确认后弹出管理员授权，通过签名 APT 源安装并重启。
+- Automatically discovers devices on the local network through mDNS, with manual discovery and reconnection refresh.
+- Pairs devices using a 60-second one-time sync code; an existing device must still approve each new device.
+- Synchronizes plain-text clipboard content between trusted devices in real time while suppressing remote-write sync loops.
+- Sends files through drag and drop, a native file picker, or in-page paste; when no destination is selected, all online devices receive the files.
+- Supports streaming transfers, resumable offsets, BLAKE3 integrity verification, temporary files, and atomic commits.
+- Provides clipboard and file history with search, favorites, repeat sync, and backend pagination.
+- Lets users enable deletion sync and favorite sync independently; both are disabled by default.
+- Supports English, Simplified Chinese, Traditional Chinese, Japanese, and Korean, follows the system language by default, and provides an immediate language switch in Settings.
+- Includes tray residency, sync pause, launch at startup, a configurable receive folder, and device management.
+- Checks for updates about five seconds after launch, every 30 minutes afterward, and on demand.
+- Ignoring a version suppresses only startup and scheduled reminders; a manual check still shows it.
+- macOS and Windows can download and verify updates in the background before requesting installation confirmation. Ubuntu requests administrator authorization after confirmation, then installs through the signed APT repository and restarts.
 
-## 安全与隐私
+## Security and Privacy
 
-- 剪贴板和文件不上传到 SyncHalo 服务器，数据面只在局域网可信设备之间传输。
-- 配对使用 SPAKE2 密码认证密钥交换；可信连接使用 QUIC、TLS 1.3、证书固定和设备签名挑战。
-- 剪贴板正文以 XChaCha20-Poly1305 加密后保存在本机 SQLite 中。
-- Rust 生成的本地 KEK 保存在权限为 `0600` 的 `synchalo.key`；数据库只保存包装后的数据密钥和加密身份。
-- 私钥、文件字节、数据库句柄和密码学操作不会进入 WebView。
-- 生产页面只加载应用内静态资源，日志不会记录剪贴板或文件内容。
-- Ubuntu 的管理员 helper 只接受受限版本号，并且只能通过固定签名源升级 `sync-halo` 包；应用本身不获得 root 权限。
+- Clipboard content and files are never uploaded to a SyncHalo server. The data plane is limited to trusted devices on the local network.
+- Pairing uses SPAKE2 password-authenticated key exchange. Trusted connections use QUIC, TLS 1.3, certificate pinning, and a device-signature challenge.
+- Clipboard bodies are encrypted with XChaCha20-Poly1305 before being stored in local SQLite.
+- A locally generated KEK is stored in `synchalo.key` with `0600` permissions. The database stores only wrapped data keys and encrypted identities.
+- Private keys, file bytes, database handles, and cryptographic operations never enter the WebView.
+- Production pages load only bundled static assets, and logs never include clipboard or file content.
+- The Ubuntu administrator helper accepts only a constrained version string and can upgrade only the `sync-halo` package from the pinned signed repository; the application itself never gains root privileges.
 
-## 下载与安装
+## Download and Install
 
-当前正式产物支持：
+Current release artifacts support:
 
-| 平台 | 架构 | 安装包 | 更新方式 |
+| Platform | Architecture | Package | Update path |
 | --- | --- | --- | --- |
-| macOS 13+ | Apple Silicon（ARM64） | ZIP 中的 `.app` | 应用内签名更新 |
-| Ubuntu 24.04 | ARM64、x86_64（amd64） | `.deb` | 应用提醒、Polkit 授权、签名 APT 安装 |
-| Windows 10/11 | x64 | NSIS `.exe`、`.msi` | 应用内签名更新 |
+| macOS 13+ | Apple Silicon (ARM64) | `.app` in a ZIP archive | Signed in-app update |
+| Ubuntu 24.04 | ARM64 and x86_64 (amd64) | `.deb` | In-app prompt, Polkit authorization, signed APT installation |
+| Windows 10/11 | x64 | NSIS `.exe` and `.msi` | Signed in-app update |
 
-请先在 [GitHub Releases](https://github.com/macji/synchalo/releases/latest) 下载当前平台的最新版。
+Download the newest package for your platform from [GitHub Releases](https://github.com/macji/synchalo/releases/latest).
 
 ### macOS
 
-下载 `SyncHalo_<版本>_macos-arm64.zip`，解压后把 `SyncHalo.app` 移到“应用程序”目录并打开。正式包经过 Developer ID 签名和 Apple 公证。
+Download `SyncHalo_<version>_macos-arm64.zip`, extract it, move `SyncHalo.app` to Applications, and open it. Official packages are signed with Developer ID and notarized by Apple.
 
-如果系统仍阻止首次打开，请在 Finder 中右键 SyncHalo，选择“打开”并确认。
+If macOS still blocks the first launch, Control-click SyncHalo in Finder, select **Open**, and confirm.
 
-### Ubuntu：DEB（推荐）
+### Ubuntu: DEB (recommended)
 
-先确认设备架构：
+Check your architecture first:
 
 ```bash
 dpkg --print-architecture
 ```
 
-当前安装包支持 `arm64` 和 `amd64`。下载与输出架构对应的 DEB 后运行：
+Packages are available for `arm64` and `amd64`. Download the matching DEB, then run:
 
 ```bash
 cd ~/Downloads
@@ -62,16 +63,16 @@ sudo apt install ./SyncHalo_*_ubuntu-*.deb
 sudo apt update
 ```
 
-DEB 会自动安装 SyncHalo 的公开 APT 签名密钥、Deb822 软件源、受限更新 helper 和 Polkit policy。发现新版后，SyncHalo 会显示版本和发布说明；点击“立即更新”将弹出 Ubuntu 管理员授权窗口，APT 验证并安装指定版本后自动重启应用。
+The DEB installs SyncHalo's public APT signing key, Deb822 source, constrained update helper, and Polkit policy. When an update is available, SyncHalo displays the version and release notes. Selecting **Update now** opens the Ubuntu administrator authorization dialog; APT verifies and installs the exact version before SyncHalo restarts.
 
-仍可使用 Ubuntu 软件更新器或以下命令手动更新：
+You can also update through Ubuntu Software Updater or run:
 
 ```bash
 sudo apt update
 sudo apt install --only-upgrade sync-halo
 ```
 
-也可以不先下载 DEB，手动添加软件源后安装：
+To install directly from the repository without downloading a DEB first:
 
 ```bash
 sudo install -d -m 0755 /etc/apt/keyrings
@@ -89,34 +90,34 @@ sudo apt update
 sudo apt install sync-halo
 ```
 
-首次单独安装下载的 DEB 时，图形安装器仍可能把它标记为未知来源；配置完成后，后续 APT 仓库元数据和软件包摘要均由 SyncHalo APT 密钥认证。
+A graphical installer may identify the first standalone DEB as coming from an unknown source. After repository enrollment, SyncHalo's APT key authenticates all subsequent repository metadata and package hashes.
 
 ### Windows
 
-下载 `SyncHalo_<版本>_windows-x64-setup.exe` 运行安装，或使用 MSI 进行系统部署。
+Run `SyncHalo_<version>_windows-x64-setup.exe`, or use the MSI for managed deployment.
 
-SignPath Foundation 审核完成前，Windows 正式包暂未进行 Authenticode 签名，系统可能显示“未知发布者”或 SmartScreen 提醒。每个 Release 都提供 SHA-256 校验文件；请只从本仓库的 Releases 页面下载。
+Until the SignPath Foundation review is complete, official Windows packages are temporarily unsigned and Windows may display an unknown-publisher or SmartScreen warning. Every release includes SHA-256 checksums; download installers only from this repository's Releases page.
 
-## 第一次使用
+## First Use
 
-1. 确保两台设备处于同一局域网，且防火墙允许 SyncHalo 的本地网络通信。
-2. 在已有设备的“设置”或“同步文件”页面生成一次性同步码。
-3. 在另一台设备选择“加入”，输入同步码。
-4. 回到已有设备确认新设备名称和平台。
-5. 配对成功后即可同步文本；文件必须通过选择、拖放或在同步文件页面粘贴来显式发送。
+1. Make sure both devices are on the same local network and that the firewall allows SyncHalo's local network traffic.
+2. Generate a one-time sync code from **Settings** or **File sync** on the existing device.
+3. Select **Join** on the other device and enter the sync code.
+4. Return to the existing device and approve the new device name and platform.
+5. After pairing, text synchronizes automatically. Files must be sent explicitly by choosing, dropping, or pasting them on the File sync page.
 
-Wayland 对后台全局剪贴板有更严格的限制。Ubuntu 上的实际能力取决于桌面 compositor 是否支持 data-control；能力不足时，应用会降级为仅窗口活跃或手动同步，文件同步不受此限制。
+Wayland applies stricter limits to background global clipboard access. Actual capability on Ubuntu depends on whether the desktop compositor supports data-control. When it does not, SyncHalo falls back to active-window-only or manual clipboard sync; file sync is unaffected.
 
-## 从源码开发
+## Develop from Source
 
-### 通用环境
+### Common requirements
 
 - Git
-- Node.js 22 或更高版本，推荐 Node.js 24
-- Rust 1.88 或更高版本及 Cargo
-- 当前平台对应的 Tauri 2 系统依赖
+- Node.js 22 or newer; Node.js 24 is recommended
+- Rust 1.88 or newer and Cargo
+- The Tauri 2 system dependencies for your platform
 
-克隆并安装锁定依赖：
+Clone the repository and install locked dependencies:
 
 ```bash
 git clone https://github.com/macji/synchalo.git
@@ -124,36 +125,36 @@ cd synchalo
 npm ci
 ```
 
-运行使用演示数据的 Web UI：
+Run the Web UI with demo data:
 
 ```bash
 npm run dev
 ```
 
-运行包含 Rust 后端、真实发现和系统集成的桌面应用：
+Run the complete desktop application with the Rust backend, real discovery, and system integration:
 
 ```bash
 npm run tauri -- dev
 ```
 
-仅限本地调试时可启用临时内存密钥：
+For local debugging only, you can enable ephemeral in-memory keys:
 
 ```bash
 SYNCHALO_EPHEMERAL_KEYS=1 npm run tauri -- dev
 ```
 
-该模式不会持久化剪贴板历史或设备信任，禁止用于发布构建。
+This mode does not persist clipboard history or device trust and must never be used for release builds.
 
-### macOS 源码构建
+### macOS source build
 
-安装 Xcode Command Line Tools：
+Install Xcode Command Line Tools:
 
 ```bash
 xcode-select --install
 rustup target add aarch64-apple-darwin
 ```
 
-没有 Developer ID 证书时可生成仅供本机测试的 ad-hoc 包：
+Without a Developer ID certificate, you can create an ad-hoc package for local testing only:
 
 ```bash
 APPLE_SIGNING_IDENTITY=- npm run tauri -- build \
@@ -162,11 +163,11 @@ APPLE_SIGNING_IDENTITY=- npm run tauri -- build \
   --config '{"bundle":{"createUpdaterArtifacts":false}}'
 ```
 
-该构建没有 Apple 公证，不能作为正式发布包分发。
+This build is not notarized by Apple and must not be distributed as an official release.
 
-### Ubuntu 源码构建
+### Ubuntu source build
 
-请在 Ubuntu 24.04 ARM64 或 x86_64 主机上安装依赖：
+Install dependencies on an Ubuntu 24.04 ARM64 or x86_64 host:
 
 ```bash
 sudo apt update
@@ -182,11 +183,11 @@ npm ci
 npm run tauri -- build --bundles deb
 ```
 
-GitHub Actions 使用 `ubuntu-24.04-arm` 和 `ubuntu-24.04` runner 分别原生构建 ARM64 与 x86_64 DEB，不进行跨架构伪编译。
+GitHub Actions uses native `ubuntu-24.04-arm` and `ubuntu-24.04` runners for ARM64 and x86_64 DEBs respectively; it does not use cross-architecture emulation.
 
-### Windows x64 源码构建
+### Windows x64 source build
 
-需要 Visual Studio 2022 Build Tools（Desktop development with C++）、WebView2、Node.js 和 Rust MSVC 工具链。在 Developer PowerShell 中运行：
+Install Visual Studio 2022 Build Tools with **Desktop development with C++**, WebView2, Node.js, and the Rust MSVC toolchain. Then run in Developer PowerShell:
 
 ```powershell
 rustup target add x86_64-pc-windows-msvc
@@ -194,11 +195,11 @@ npm ci
 npm run tauri -- build --target x86_64-pc-windows-msvc --bundles nsis,msi --config '{"bundle":{"createUpdaterArtifacts":false}}'
 ```
 
-自行构建的安装包不会包含 SyncHalo 的正式 Authenticode 或 Tauri 更新签名。
+Locally built installers do not contain SyncHalo's official Authenticode or Tauri update signatures.
 
-## 测试与验证
+## Test and Verify
 
-提交前运行：
+Run before committing:
 
 ```bash
 npm run build
@@ -212,37 +213,41 @@ tests/release/deb_apt_bootstrap_smoke.sh
 tests/release/apt_repository_smoke.sh
 ```
 
-浏览器 UI 冒烟测试需要先启动 Vite：
+For the browser UI smoke test, start Vite first:
 
 ```bash
 npm run dev
 ```
 
-然后在另一个终端运行：
+Then run in another terminal:
 
 ```bash
 python3 tests/e2e/ui_smoke.py
 ```
 
-## 项目结构
+## Project Structure
 
 ```text
-apps/desktop/src/        React / TypeScript 界面
-apps/desktop/src-tauri/  Tauri commands 与桌面运行时
-crates/core/             领域模型与事件语义
-crates/network/          mDNS、配对、QUIC 与可信连接
-crates/platform/         系统剪贴板与平台适配
-crates/storage/          SQLite、迁移和本地加密
-crates/transfer/         文件分块、续传与完整性校验
-tests/e2e/               浏览器交互测试
-tests/release/           发布与软件源测试
-packaging/               Linux 软件源和安装包资源
+apps/desktop/src/        React and TypeScript UI
+apps/desktop/src-tauri/  Tauri commands and desktop runtime
+crates/core/             Domain models and event semantics
+crates/network/          mDNS, pairing, QUIC, and trusted connections
+crates/platform/         System clipboard and platform adapters
+crates/storage/          SQLite, migrations, and local encryption
+crates/transfer/         File chunking, resume, and integrity verification
+tests/e2e/               Browser interaction tests
+tests/release/           Release and package-repository tests
+packaging/               Linux repository and package assets
 ```
 
-更完整的产品、界面和发布说明见 [PRD.md](PRD.md)、[UI-DESIGN.md](UI-DESIGN.md) 和 [RELEASING.md](RELEASING.md)。
+See [PRD.md](PRD.md), [UI-DESIGN.md](UI-DESIGN.md), and [RELEASING.md](RELEASING.md) for the full product, interface, and release documentation.
 
-## 发布说明
+## Releases
 
-正式标签通过 GitHub Actions 并行构建 Ubuntu ARM64、Ubuntu x86_64 与 Windows x64，生成并发布双架构签名 APT 仓库。macOS ARM64 在授权 Mac 上完成 Developer ID 签名、Apple 公证和 Tauri 更新签名，然后上传到同一个 GitHub Release。
+Release tags trigger parallel GitHub Actions builds for Ubuntu ARM64, Ubuntu x86_64, and Windows x64, and publish the signed dual-architecture APT repository. macOS ARM64 is built on an authorized Mac, signed with Developer ID, notarized by Apple, signed for Tauri updates, and uploaded to the same GitHub Release.
 
-构建和仓库中只包含公开验证密钥；APT 私钥、Tauri 更新私钥、Apple 证书及公证凭据不会进入源码或 Git 历史。完整流程见 [RELEASING.md](RELEASING.md)。
+Only public verification keys are stored in builds and the repository. APT private keys, Tauri update private keys, Apple certificates, and notarization credentials never enter source control or Git history. See [RELEASING.md](RELEASING.md) for the complete process.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

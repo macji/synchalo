@@ -10,10 +10,10 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 rust-version = "1.88"
-license = "MIT OR Apache-2.0"
+license = "MIT"
 
 [workspace.dependencies]
 anyhow = "1.0"

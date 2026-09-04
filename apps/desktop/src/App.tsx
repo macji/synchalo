@@ -18,13 +18,14 @@ import { HaloMark } from "./components/HaloMark";
 import { Sidebar } from "./components/Sidebar";
 import { ToastRegion, type ToastView } from "./components/ToastRegion";
 import { UpdateDialog } from "./components/UpdateDialog";
+import { localizeError, useI18n } from "./i18n";
 import { DeviceOfflineDebouncer } from "./lib/devicePresence";
-import { NO_SYNC_DEVICES_MESSAGE } from "./lib/messages";
 import { ClipboardPage } from "./pages/ClipboardPage";
 import { FilesPage } from "./pages/FilesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 export default function App() {
+  const { setPreference, t } = useI18n();
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [appVersion, setAppVersion] = useState<string | null>(null);
   const [deviceOfflineDebouncer] = useState(
@@ -109,67 +110,67 @@ export default function App() {
   const reportError = useCallback(
     (error: unknown) => {
       const normalized = normalizeError(error);
-      pushToast({ message: normalized.message, tone: "warning" }, 6_000);
+      pushToast({ message: localizeError(normalized, t), tone: "warning" }, 6_000);
     },
-    [pushToast],
+    [pushToast, t],
   );
 
   const presentUpdateStatus = useCallback(
     (status: UpdateStatusView) => {
       if (status.state === "checking") {
-        pushToast({ message: status.message ?? "正在检查更新…", tone: "info" }, 3_000);
+        pushToast({ message: t("update.checking"), tone: "info" }, 3_000);
       } else if (status.state === "upToDate") {
         setUpdatePrompt(null);
-        pushToast({ message: status.message ?? "当前已是最新版本。", tone: "success" });
+        pushToast({ message: t("update.upToDate"), tone: "success" });
       } else if (status.state === "available" || status.state === "ready") {
         setUpdatePrompt(status);
       } else if (status.state === "downloading") {
         setUpdatePrompt(null);
         pushToast({
-          message: `正在下载并验证 SyncHalo ${status.version ?? "新版"}…`,
+          message: t("update.downloading", { version: status.version ?? t("update.newVersion") }),
           tone: "info",
         }, 60_000);
       } else if (status.state === "installing") {
         setUpdatePrompt(null);
-        pushToast({ message: "正在安装更新并准备重新启动…", tone: "info" }, 60_000);
+        pushToast({ message: t("update.installing"), tone: "info" }, 60_000);
       } else if (status.state === "installed") {
-        pushToast({ message: "更新已安装，正在重新启动…", tone: "success" }, 10_000);
+        pushToast({ message: t("update.installed"), tone: "success" }, 10_000);
       } else if (status.state === "cancelled") {
         setUpdatePrompt(null);
-        pushToast({ message: status.message ?? "更新安装已取消。", tone: "info" }, 6_000);
+        pushToast({ message: t("update.cancelled"), tone: "info" }, 6_000);
       } else if (
         status.state === "unsupported" ||
         status.state === "busy" ||
         status.state === "ignored"
       ) {
         if (status.state === "ignored") setUpdatePrompt(null);
-        pushToast({ message: status.message ?? "当前无法检查更新。", tone: "info" }, 6_000);
+        pushToast({ message: t("update.unavailable"), tone: "info" }, 6_000);
       } else {
         pushToast({
-          message: status.message ?? "自动更新失败，请手动下载新版。",
+          message: t("update.failed"),
           tone: "warning",
         }, 10_000);
       }
     },
-    [pushToast],
+    [pushToast, t],
   );
 
   const reportQueuedFiles = useCallback(
     (transfers: TransferView[], successMessage: string) => {
       if (!transfers.length) return;
       if (transfers.every((transfer) => transfer.state === "failed")) {
-        pushToast({ message: `${transfers.length} 个文件同步失败`, tone: "warning" });
+        pushToast({ message: t("toast.filesFailed", { count: transfers.length }), tone: "warning" });
         return;
       }
       if (transfers.some((transfer) =>
         transfer.targets.some((target) => target.state === "failed")
       )) {
-        pushToast({ message: `${transfers.length} 个文件已开始同步，部分目标失败`, tone: "warning" });
+        pushToast({ message: t("toast.filesPartial", { count: transfers.length }), tone: "warning" });
         return;
       }
       pushToast({ message: successMessage, tone: "success" });
     },
-    [pushToast],
+    [pushToast, t],
   );
 
   const installUpdate = useCallback(async () => {
@@ -204,8 +205,8 @@ export default function App() {
       ).length;
       pushToast({
         message: onlineCount
-          ? `局域网设备已刷新，${onlineCount} 台设备在线`
-          : "局域网设备已刷新，暂未发现其他在线设备",
+          ? t("toast.devicesRefreshedOnline", { count: onlineCount })
+          : t("toast.devicesRefreshedEmpty"),
         tone: onlineCount ? "success" : "info",
       });
     } catch (error) {
@@ -213,11 +214,11 @@ export default function App() {
     } finally {
       setRefreshingDevices(false);
     }
-  }, [deviceOfflineDebouncer, pushToast, reportError]);
+  }, [deviceOfflineDebouncer, pushToast, reportError, t]);
 
   const showNoSyncDevices = useCallback(() => {
-    pushToast({ message: NO_SYNC_DEVICES_MESSAGE, tone: "warning" }, 6_000);
-  }, [pushToast]);
+    pushToast({ message: t("errors.noSyncDevices"), tone: "warning" }, 6_000);
+  }, [pushToast, t]);
 
   const loadFilePage = useCallback(
     async (
@@ -268,12 +269,12 @@ export default function App() {
         const transfers = await api.enqueueFiles(paths, targetIds);
         const current = fileViewRef.current;
         await loadFilePage(current.query, current.favoritesOnly, current.filter, 1);
-        reportQueuedFiles(transfers, `${transfers.length} 个文件已加入队列`);
+        reportQueuedFiles(transfers, t("toast.filesQueued", { count: transfers.length }));
       } catch (error) {
         reportError(error);
       }
     },
-    [loadFilePage, reportError, reportQueuedFiles, showNoSyncDevices],
+    [loadFilePage, reportError, reportQueuedFiles, showNoSyncDevices, t],
   );
 
   const pasteFileClipboard = useCallback(async () => {
@@ -287,14 +288,14 @@ export default function App() {
       const current = fileViewRef.current;
       await loadFilePage(current.query, current.favoritesOnly, current.filter, 1);
       if (transfers.length) {
-        reportQueuedFiles(transfers, `${transfers.length} 个文件已加入队列`);
+        reportQueuedFiles(transfers, t("toast.filesQueued", { count: transfers.length }));
       } else {
-        pushToast({ message: "粘贴板中没有文件", tone: "info" });
+        pushToast({ message: t("toast.clipboardHasNoFiles"), tone: "info" });
       }
     } catch (error) {
       reportError(error);
     }
-  }, [loadFilePage, pushToast, reportError, reportQueuedFiles, showNoSyncDevices]);
+  }, [loadFilePage, pushToast, reportError, reportQueuedFiles, showNoSyncDevices, t]);
 
   const loadClipboardPage = useCallback(
     async (query: string, favoritesOnly: boolean, page: number) => {
@@ -329,6 +330,18 @@ export default function App() {
     const current = clipboardViewRef.current;
     void loadClipboardPage(current.query, current.favoritesOnly, current.page);
   };
+  const enqueueFilePathsRef = useRef(enqueueFilePaths);
+  const presentUpdateStatusRef = useRef(presentUpdateStatus);
+  const pushToastRef = useRef(pushToast);
+  const reportErrorRef = useRef(reportError);
+  const setPreferenceRef = useRef(setPreference);
+  const tRef = useRef(t);
+  enqueueFilePathsRef.current = enqueueFilePaths;
+  presentUpdateStatusRef.current = presentUpdateStatus;
+  pushToastRef.current = pushToast;
+  reportErrorRef.current = reportError;
+  setPreferenceRef.current = setPreference;
+  tRef.current = t;
 
   useEffect(() => {
     let alive = true;
@@ -339,6 +352,7 @@ export default function App() {
       .then((value) => {
         if (alive) {
           deviceOfflineDebouncer.initialize(value.devices);
+          setPreferenceRef.current(value.settings.language);
           setSnapshot(value);
           setClipboardView((current) => ({
             ...current,
@@ -359,7 +373,7 @@ export default function App() {
       });
     api.getAppVersion().then((version) => {
       if (alive) setAppVersion(version);
-    }).catch(reportError);
+    }).catch((error) => reportErrorRef.current(error));
 
     const register = async () => {
       unlisteners.push(
@@ -372,34 +386,48 @@ export default function App() {
         await api.onDevicesChanged((devices) => deviceOfflineDebouncer.update(devices)),
         await api.onPairingCodeChanged((pairingCode) => setSnapshot((current) => current && { ...current, pairingCode })),
         await api.onPairingRequested((request) => {
-          const platform = request.platform === "macos" ? "macOS" : request.platform === "linux" ? "Ubuntu / Linux" : "未知平台";
+          const translate = tRef.current;
+          const platform = request.platform === "macos"
+            ? "macOS"
+            : request.platform === "linux"
+              ? "Ubuntu / Linux"
+              : translate("common.unknownPlatform");
           setConfirm({
-            title: `允许 ${request.deviceName} 加入？`,
-            body: `${platform} 设备已通过当前同步码验证。允许后，它可以接收本同步空间中的粘贴板和文件。`,
-            confirmLabel: "允许加入",
+            title: translate("pairing.requestTitle", { name: request.deviceName }),
+            body: translate("pairing.requestBody", { platform }),
+            confirmLabel: translate("pairing.allow"),
             onConfirm: async () => {
               try {
                 await api.respondToPairing(request.requestId, true);
-                pushToast({ message: `已允许 ${request.deviceName} 加入`, tone: "success" });
+                pushToastRef.current({
+                  message: tRef.current("toast.pairingAllowed", { name: request.deviceName }),
+                  tone: "success",
+                });
               } catch (error) {
-                reportError(error);
+                reportErrorRef.current(error);
               }
             },
             onCancel: async () => {
               try {
                 await api.respondToPairing(request.requestId, false);
-                pushToast({ message: `已拒绝 ${request.deviceName}`, tone: "info" });
+                pushToastRef.current({
+                  message: tRef.current("toast.pairingDenied", { name: request.deviceName }),
+                  tone: "info",
+                });
               } catch (error) {
-                reportError(error);
+                reportErrorRef.current(error);
               }
             },
           });
         }),
-        await api.onSettingsChanged((settings) => setSnapshot((current) => current && { ...current, settings })),
+        await api.onSettingsChanged((settings) => {
+          setPreferenceRef.current(settings.language);
+          setSnapshot((current) => current && { ...current, settings });
+        }),
         await api.onTransferChanged(() => refreshFileRef.current()),
         await api.onSyncStatusChanged((syncStatus) => setSnapshot((current) => current && { ...current, syncStatus })),
-        await api.onUserError(reportError),
-        await api.onUpdateStatus(presentUpdateStatus),
+        await api.onUserError((error) => reportErrorRef.current(error)),
+        await api.onUpdateStatus((status) => presentUpdateStatusRef.current(status)),
         await api.onNavigate(setRoute),
         await api.onFileDragDrop((event) => {
           if (event.type === "enter" || event.type === "over") {
@@ -410,7 +438,7 @@ export default function App() {
           } else {
             setRoute("files");
             setNativeFileDragging(false);
-            if (event.paths.length) void enqueueFilePaths(event.paths);
+            if (event.paths.length) void enqueueFilePathsRef.current(event.paths);
           }
         }),
       );
@@ -423,7 +451,7 @@ export default function App() {
       timers.forEach((timer) => window.clearTimeout(timer));
       deviceOfflineDebouncer.dispose();
     };
-  }, [deviceOfflineDebouncer, enqueueFilePaths, presentUpdateStatus, pushToast, reportError]);
+  }, [deviceOfflineDebouncer]);
 
   useEffect(() => {
     const preventContextMenu = (event: MouseEvent) => event.preventDefault();
@@ -474,28 +502,28 @@ export default function App() {
           initialQuery={clipboardView.query}
           items={snapshot.clipboardHistory}
           onClear={() => setConfirm({
-            title: "清空粘贴板历史？",
-            body: "收藏条目会保留，其他本机历史将被永久删除。此操作不会影响其他设备。",
-            confirmLabel: "清空历史",
+            title: t("clipboard.clearTitle"),
+            body: t("clipboard.clearBody"),
+            confirmLabel: t("clipboard.clearConfirm"),
             danger: true,
             onConfirm: async () => {
               const removed = await api.clearClipboardHistory();
               const view = clipboardViewRef.current;
               await loadClipboardPage(view.query, view.favoritesOnly, 1);
-              pushToast({ message: `已清除 ${removed} 条历史`, tone: "success" });
+              pushToast({ message: t("toast.historyCleared", { count: removed }), tone: "success" });
             },
           })}
           onCopy={(item) => {
-            void api.copyHistoryItem(item.id).then(() => pushToast({ message: "已复制", tone: "success" })).catch(reportError);
+            void api.copyHistoryItem(item.id).then(() => pushToast({ message: t("toast.copied"), tone: "success" })).catch(reportError);
           }}
           onDelete={(item) => {
             void api.deleteClipboardItem(item.id).then(async () => {
               const view = clipboardViewRef.current;
               await loadClipboardPage(view.query, view.favoritesOnly, view.page);
               pushToast({
-                message: "历史已删除",
+                message: t("toast.historyDeleted"),
                 tone: "info",
-                actionLabel: "撤销",
+                actionLabel: t("common.undo"),
                 onAction: async () => {
                   await api.restoreClipboardItem(item);
                   const currentView = clipboardViewRef.current;
@@ -538,15 +566,15 @@ export default function App() {
           onBrowserDrop={api.isTauri ? undefined : enqueueFilePaths}
           onCancel={(id) => void updateTransfer(api.cancelTransfer(id))}
           onClear={() => setConfirm({
-            title: "清空同步记录？",
-            body: "收藏记录和正在进行的任务会保留，其他本机同步记录将被永久删除。已发送或接收的文件不会被删除。",
-            confirmLabel: "清空记录",
+            title: t("files.clearTitle"),
+            body: t("files.clearBody"),
+            confirmLabel: t("files.clearConfirm"),
             danger: true,
             onConfirm: async () => {
               const removed = await api.clearFileHistory();
               const view = fileViewRef.current;
               await loadFilePage(view.query, view.favoritesOnly, view.filter, 1);
-              pushToast({ message: `已清除 ${removed} 条同步记录`, tone: "success" });
+              pushToast({ message: t("toast.recordsCleared", { count: removed }), tone: "success" });
             },
           })}
           onDelete={(id) => {
@@ -562,7 +590,7 @@ export default function App() {
           }}
           onCopySyncCode={() => {
             void api.copyPairingCode()
-              .then(() => pushToast({ message: "同步码已复制", tone: "success" }))
+              .then(() => pushToast({ message: t("toast.syncCodeCopied"), tone: "success" }))
               .catch(reportError);
           }}
           onNoTargets={showNoSyncDevices}
@@ -589,7 +617,7 @@ export default function App() {
               const transfers = await api.resyncTransfer(transfer.id, targetIds);
               const current = fileViewRef.current;
               await loadFilePage(current.query, current.favoritesOnly, current.filter, 1);
-              reportQueuedFiles(transfers, `${transfer.fileName} 已再次加入同步队列`);
+              reportQueuedFiles(transfers, t("toast.resyncQueued", { name: transfer.fileName }));
             } catch (error) {
               reportError(error);
             }
@@ -601,7 +629,7 @@ export default function App() {
               const transfers = await api.selectFiles(targetIds);
               const current = fileViewRef.current;
               await loadFilePage(current.query, current.favoritesOnly, current.filter, 1);
-              reportQueuedFiles(transfers, `${transfers.length} 个文件已加入队列`);
+              reportQueuedFiles(transfers, t("toast.filesQueued", { count: transfers.length }));
             } catch (error) {
               reportError(error);
             }
@@ -633,7 +661,7 @@ export default function App() {
         devices={snapshot.devices}
         onCopyCode={() => {
           void api.copyPairingCode().then(() => {
-            pushToast({ message: "同步码已复制", tone: "success" });
+            pushToast({ message: t("toast.syncCodeCopied"), tone: "success" });
           }).catch(reportError);
         }}
         onCheckForUpdates={async () => {
@@ -654,7 +682,7 @@ export default function App() {
                 device,
               ])
             : current);
-          pushToast({ message: `已连接 ${device.name}`, tone: "success" });
+          pushToast({ message: t("toast.connected", { name: device.name }), tone: "success" });
         }).catch(reportError)}
         onOpenDirectory={() => void api.openReceiveDirectory().catch(reportError)}
         onPauseDevice={(device, value) => {
@@ -667,14 +695,19 @@ export default function App() {
                 ),
               )
               : current);
-            pushToast({ message: value ? `已暂停向 ${device.name} 同步` : `已恢复向 ${device.name} 同步`, tone: "info" });
+            pushToast({
+              message: value
+                ? t("toast.devicePaused", { name: device.name })
+                : t("toast.deviceResumed", { name: device.name }),
+              tone: "info",
+            });
           }).catch(reportError);
         }}
         onRefreshDevices={() => void refreshDevices()}
         onRevoke={(device) => setConfirm({
-          title: `撤销 ${device.name}？`,
-          body: "该设备将立即失去同步权限；已经保存在双方设备上的文件和历史不会被删除。",
-          confirmLabel: "撤销设备",
+          title: t("settings.revokeTitle", { name: device.name }),
+          body: t("settings.revokeBody"),
+          confirmLabel: t("settings.revokeDevice"),
           danger: true,
           onConfirm: async () => {
             await api.revokeDevice(device.id);
@@ -718,6 +751,7 @@ export default function App() {
     async function updateSettings(patch: SettingsPatch) {
       try {
         const settings = await api.updateSettings(patch);
+        setPreference(settings.language);
         setSnapshot((current) => current && { ...current, settings });
       } catch (error) {
         reportError(error);
@@ -742,6 +776,8 @@ export default function App() {
     route,
     showNoSyncDevices,
     snapshot,
+    setPreference,
+    t,
   ]);
 
   if (fatalError) {
@@ -749,10 +785,10 @@ export default function App() {
       <main className="fatal-screen">
         <HaloMark size={44} />
         <AlertTriangle aria-hidden="true" size={24} />
-        <h1>SyncHalo 无法启动</h1>
-        <p>{fatalError.message}</p>
+        <h1>{t("app.fatalTitle")}</h1>
+        <p>{localizeError(fatalError, t)}</p>
         {fatalError.detail ? <code>{fatalError.detail}</code> : null}
-        <button className="button button--primary" onClick={() => window.location.reload()} type="button">重新尝试</button>
+        <button className="button button--primary" onClick={() => window.location.reload()} type="button">{t("app.retry")}</button>
       </main>
     );
   }
@@ -762,7 +798,7 @@ export default function App() {
       <main className="loading-screen">
         <HaloMark size={40} />
         <LoaderCircle className="loading-spinner" size={20} />
-        <span>正在启动本地同步服务…</span>
+        <span>{t("app.loading")}</span>
       </main>
     );
   }
@@ -818,7 +854,7 @@ function normalizeError(error: unknown): UserFacingError {
   }
   return {
     code: "INTERNAL",
-    message: typeof error === "string" ? error : "操作失败",
+    message: typeof error === "string" ? error : "Operation failed",
     detail: null,
     recoverable: true,
   };

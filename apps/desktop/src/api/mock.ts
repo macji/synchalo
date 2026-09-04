@@ -199,6 +199,7 @@ export const mockSnapshot: AppSnapshot = {
     notificationsEnabled: true,
     automaticUpdatesEnabled: true,
     ignoredUpdateVersion: null,
+    language: "system",
   },
   pairingCode: null,
   capabilities: {

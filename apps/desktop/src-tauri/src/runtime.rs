@@ -15,10 +15,10 @@ use synchalo_core::{
     AppError, AppSnapshot, CLIPBOARD_PAGE_SIZE, ClipboardDirection, ClipboardEvent,
     ClipboardHistoryPage, ClipboardItemView, DeviceConnectionState, DeviceView,
     FILE_HISTORY_PAGE_SIZE, HistoryItemKind, HistoryMutation, HistoryMutationEvent,
-    HistoryRetention, HlcTimestamp, PairingCodeView, PairingRequestView, SettingsPatch,
-    SettingsView, SyncState, SyncStatusView, TransferDirection, TransferHistoryFilter,
-    TransferHistoryPage, TransferState, TransferTargetView, TransferView, UserFacingError,
-    content_hash,
+    HistoryRetention, HlcTimestamp, LanguagePreference, PairingCodeView, PairingRequestView,
+    SettingsPatch, SettingsView, SyncState, SyncStatusView, TransferDirection,
+    TransferHistoryFilter, TransferHistoryPage, TransferState, TransferTargetView, TransferView,
+    UserFacingError, content_hash,
 };
 use synchalo_network::{
     DEFAULT_QUIC_PORT, DiscoveredPeer, DiscoveryConfig, DiscoveryEvent, DiscoveryService,
@@ -140,6 +140,7 @@ impl AppRuntime {
             notifications_enabled: true,
             automatic_updates_enabled: true,
             ignored_update_version: None,
+            language: LanguagePreference::System,
         };
         let mut settings = database.load_settings(defaults)?;
         if enforce_notifications_enabled(&mut settings) {
@@ -639,6 +640,9 @@ impl AppRuntime {
         }
         if let Some(enabled) = patch.automatic_updates_enabled {
             settings.automatic_updates_enabled = enabled;
+        }
+        if let Some(language) = patch.language {
+            settings.language = language;
         }
         enforce_notifications_enabled(&mut settings);
         self.database.save_settings(&settings)?;
@@ -1498,16 +1502,16 @@ impl AppRuntime {
         if self.settings.read().notifications_enabled
             && (incoming || transfer.state == TransferState::Completed)
         {
-            let body = if incoming {
-                format!("{} 已保存到接收目录", transfer.file_name)
-            } else {
-                format!("{} 已发送完成", transfer.file_name)
-            };
+            let (title, body) = crate::i18n::transfer_notification(
+                self.settings.read().language,
+                incoming,
+                &transfer.file_name,
+            );
             let _ = self
                 .app
                 .notification()
                 .builder()
-                .title("SyncHalo 文件同步完成")
+                .title(title)
                 .body(body)
                 .show();
         }
@@ -1979,6 +1983,7 @@ mod tests {
             notifications_enabled: false,
             automatic_updates_enabled: true,
             ignored_update_version: None,
+            language: LanguagePreference::System,
         };
         assert!(enforce_notifications_enabled(&mut settings));
         assert!(settings.notifications_enabled);
@@ -1998,6 +2003,7 @@ mod tests {
             notifications_enabled: true,
             automatic_updates_enabled: true,
             ignored_update_version: None,
+            language: LanguagePreference::System,
         };
         let delete = HistoryMutation::Delete {
             item_kind: HistoryItemKind::Clipboard,

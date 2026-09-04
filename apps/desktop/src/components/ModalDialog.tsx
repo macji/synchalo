@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import { IconButton } from "./IconButton";
+import { useI18n } from "../i18n";
 
 interface ModalDialogProps {
   title: string;
@@ -25,6 +26,7 @@ export function ModalDialog({
   onClose,
   strongBackdrop = false,
 }: ModalDialogProps) {
+  const { t } = useI18n();
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,7 +50,7 @@ export function ModalDialog({
       <div className={`modal-dialog ${className}`} ref={panelRef} tabIndex={-1}>
         <div className="dialog-header">
           <h2>{title}</h2>
-          <IconButton icon={<X size={17} />} label={`关闭${title}`} onClick={onClose} />
+          <IconButton icon={<X size={17} />} label={t("common.closeDialog", { title })} onClick={onClose} />
         </div>
         <div className="dialog-content">{children}</div>
         {actions ? <div className="dialog-actions">{actions}</div> : null}

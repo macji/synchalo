@@ -2,6 +2,7 @@ import { ArrowUpCircle, CheckCircle2, Sparkles } from "lucide-react";
 import { useRef } from "react";
 
 import type { UpdateStatusView } from "../api/types";
+import { useI18n } from "../i18n";
 import { ModalDialog } from "./ModalDialog";
 
 interface UpdateDialogProps {
@@ -12,11 +13,12 @@ interface UpdateDialogProps {
 }
 
 export function UpdateDialog({ status, onDismiss, onIgnore, onInstall }: UpdateDialogProps) {
+  const { t } = useI18n();
   const primaryActionRef = useRef<HTMLButtonElement>(null);
 
   if (!status || (status.state !== "available" && status.state !== "ready")) return null;
   const downloaded = status.state === "ready";
-  const version = status.version ?? "新版";
+  const version = status.version ?? t("update.newVersion");
 
   return (
     <ModalDialog
@@ -27,7 +29,7 @@ export function UpdateDialog({ status, onDismiss, onIgnore, onInstall }: UpdateD
             onClick={downloaded ? onDismiss : onIgnore}
             type="button"
           >
-            {downloaded ? "稍后" : "忽略此版本"}
+            {downloaded ? t("update.later") : t("update.ignore")}
           </button>
           <button
             className="button button--primary"
@@ -36,14 +38,14 @@ export function UpdateDialog({ status, onDismiss, onIgnore, onInstall }: UpdateD
             type="button"
           >
             {downloaded ? <CheckCircle2 size={16} /> : <ArrowUpCircle size={16} />}
-            {downloaded ? "安装并重启" : "立即更新"}
+            {downloaded ? t("update.installRestart") : t("update.updateNow")}
           </button>
         </>
       }
       className="update-dialog"
       initialFocusRef={primaryActionRef}
       onClose={onDismiss}
-      title={downloaded ? "更新已下载" : "发现新版本"}
+      title={downloaded ? t("update.downloadedTitle") : t("update.availableTitle")}
     >
       <div className="update-hero">
         <div className="update-symbol" aria-hidden="true">
@@ -54,14 +56,14 @@ export function UpdateDialog({ status, onDismiss, onIgnore, onInstall }: UpdateD
           <strong>SyncHalo {version}</strong>
           <p>
             {downloaded
-              ? "安装包已完成下载和签名验证，可以在准备好后安装。"
-              : "新版本可用。更新只会在你确认后下载、验证和安装。"}
+              ? t("update.downloadedDescription")
+              : t("update.availableDescription")}
           </p>
         </div>
       </div>
       <div className="update-notes">
-        <span>发布说明</span>
-        <p>{status.notes ?? "本次更新包含稳定性和使用体验改进。"}</p>
+        <span>{t("update.releaseNotes")}</span>
+        <p>{status.notes ?? t("update.defaultNotes")}</p>
       </div>
     </ModalDialog>
   );

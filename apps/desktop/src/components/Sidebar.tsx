@@ -1,6 +1,7 @@
 import { Clipboard, Files, Pause, Play, Settings } from "lucide-react";
 
 import type { Route, SyncStatusView } from "../api/types";
+import { useI18n } from "../i18n";
 import { HaloMark } from "./HaloMark";
 
 interface SidebarProps {
@@ -10,16 +11,16 @@ interface SidebarProps {
   onPause: (paused: boolean) => void;
 }
 
-const items: Array<{ route: Route; label: string; icon: typeof Clipboard; shortcut: string }> = [
-  { route: "clipboard", label: "粘贴板", icon: Clipboard, shortcut: "⌘1" },
-  { route: "files", label: "同步文件", icon: Files, shortcut: "⌘2" },
-  { route: "settings", label: "设置", icon: Settings, shortcut: "⌘," },
-];
-
 export function Sidebar({ route, status, onNavigate, onPause }: SidebarProps) {
+  const { t } = useI18n();
   const paused = status.state === "paused";
+  const items: Array<{ route: Route; label: string; icon: typeof Clipboard; shortcut: string }> = [
+    { route: "clipboard", label: t("sidebar.clipboard"), icon: Clipboard, shortcut: "⌘1" },
+    { route: "files", label: t("sidebar.files"), icon: Files, shortcut: "⌘2" },
+    { route: "settings", label: t("sidebar.settings"), icon: Settings, shortcut: "⌘," },
+  ];
   return (
-    <aside className="sidebar" aria-label="SyncHalo 侧栏">
+    <aside className="sidebar" aria-label={t("sidebar.label")}>
       <div className="brand-block">
         <div className="brand-lockup">
           <HaloMark />
@@ -27,11 +28,11 @@ export function Sidebar({ route, status, onNavigate, onPause }: SidebarProps) {
         </div>
         <div className={`sync-indicator sync-indicator--${status.state}`}>
           <span className="status-dot" aria-hidden="true" />
-          <span>{status.label}</span>
+          <span>{t(`sync.${status.state}`)}</span>
         </div>
       </div>
 
-      <nav aria-label="主导航" className="primary-nav">
+      <nav aria-label={t("sidebar.primaryNavigation")} className="primary-nav">
         {items.map((item) => {
           const Icon = item.icon;
           const active = item.route === route;
@@ -53,19 +54,19 @@ export function Sidebar({ route, status, onNavigate, onPause }: SidebarProps) {
       </nav>
 
       <div className="sidebar-spacer" />
-      <div className="device-summary" aria-label="设备连接摘要">
+      <div className="device-summary" aria-label={t("sidebar.deviceSummary")}>
         <div>
           <span className="status-dot status-dot--online" aria-hidden="true" />
-          <span>{status.onlineCount} 台在线</span>
+          <span>{t("sidebar.onlineCount", { count: status.onlineCount })}</span>
         </div>
         <div>
           <span className="status-dot status-dot--offline" aria-hidden="true" />
-          <span>{status.offlineCount} 台离线</span>
+          <span>{t("sidebar.offlineCount", { count: status.offlineCount })}</span>
         </div>
       </div>
       <button className="sidebar-control" onClick={() => onPause(!paused)} type="button">
         {paused ? <Play aria-hidden="true" size={16} /> : <Pause aria-hidden="true" size={16} />}
-        {paused ? "恢复同步" : "暂停同步"}
+        {paused ? t("sidebar.resume") : t("sidebar.pause")}
       </button>
     </aside>
   );

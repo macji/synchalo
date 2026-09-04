@@ -7,15 +7,13 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
 };
 
-use crate::runtime::{AppRuntime, EVENT_NAVIGATE};
+use crate::{
+    i18n::{NativeText, text},
+    runtime::{AppRuntime, EVENT_NAVIGATE},
+};
 
 pub fn install(app: &AppHandle, runtime: Arc<AppRuntime>) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, "open", "打开 SyncHalo", true, None::<&str>)?;
-    let pause = MenuItem::with_id(app, "pause", "暂停或恢复同步", true, None::<&str>)?;
-    let send_file = MenuItem::with_id(app, "send-file", "发送文件…", true, None::<&str>)?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &pause, &send_file, &separator, &quit])?;
+    let menu = build_menu(app, runtime.settings().language)?;
 
     TrayIconBuilder::with_id("main")
         .icon(tray_image())
@@ -48,6 +46,49 @@ pub fn install(app: &AppHandle, runtime: Arc<AppRuntime>) -> tauri::Result<()> {
         })
         .build(app)?;
     Ok(())
+}
+
+pub fn refresh(app: &AppHandle, runtime: &AppRuntime) -> tauri::Result<()> {
+    if let Some(tray) = app.tray_by_id("main") {
+        tray.set_menu(Some(build_menu(app, runtime.settings().language)?))?;
+    }
+    Ok(())
+}
+
+fn build_menu(
+    app: &AppHandle,
+    language: synchalo_core::LanguagePreference,
+) -> tauri::Result<Menu<tauri::Wry>> {
+    let open = MenuItem::with_id(
+        app,
+        "open",
+        text(language, NativeText::TrayOpen),
+        true,
+        None::<&str>,
+    )?;
+    let pause = MenuItem::with_id(
+        app,
+        "pause",
+        text(language, NativeText::TrayPause),
+        true,
+        None::<&str>,
+    )?;
+    let send_file = MenuItem::with_id(
+        app,
+        "send-file",
+        text(language, NativeText::TraySendFile),
+        true,
+        None::<&str>,
+    )?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(
+        app,
+        "quit",
+        text(language, NativeText::TrayQuit),
+        true,
+        None::<&str>,
+    )?;
+    Menu::with_items(app, &[&open, &pause, &send_file, &separator, &quit])
 }
 
 fn show_main_window(app: &AppHandle) {

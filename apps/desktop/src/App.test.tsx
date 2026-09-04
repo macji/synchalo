@@ -4,16 +4,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import desktopPackage from "../package.json";
 import App from "./App";
 import { api } from "./api/client";
+import { I18nProvider } from "./i18n";
+
+function renderApp() {
+  return render(
+    <I18nProvider>
+      <App />
+    </I18nProvider>,
+  );
+}
 
 describe("SyncHalo shell", () => {
   beforeEach(() => {
     cleanup();
     vi.restoreAllMocks();
+    vi.spyOn(window.navigator, "language", "get").mockReturnValue("zh-CN");
+    vi.spyOn(window.navigator, "languages", "get").mockReturnValue(["zh-CN"]);
     window.localStorage.clear();
   });
 
   it("renders the two-column shell and navigates between the three pages", async () => {
-    render(<App />);
+    renderApp();
     expect(await screen.findByRole("heading", { name: "粘贴板历史" })).toBeInTheDocument();
     expect(screen.getByText("3 台在线")).toBeInTheDocument();
     expect(screen.getByText("1 台离线")).toBeInTheDocument();
@@ -90,7 +101,7 @@ describe("SyncHalo shell", () => {
       message: "已忽略这个版本的自动提醒；手动检查时仍可查看和安装。",
     });
 
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /设置/ }));
     const automaticUpdate = screen.getByRole("switch", { name: "自动更新" });
@@ -128,7 +139,7 @@ describe("SyncHalo shell", () => {
       message: null,
     });
 
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /设置/ }));
     const automaticUpdate = screen.getByRole("switch", { name: "自动更新" });
@@ -142,7 +153,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("suppresses the browser context menu", () => {
-    const { unmount } = render(<App />);
+    const { unmount } = renderApp();
     const contextMenuEvent = new MouseEvent("contextmenu", {
       bubbles: true,
       cancelable: true,
@@ -161,7 +172,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("paginates 100 items per page and toggles the favorites filter", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     expect(await screen.findByText("第 1 / 3 页 · 共 205 条 · 每页 100 条")).toBeInTheDocument();
 
     const scroller = container.querySelector<HTMLElement>(".clipboard-page .page-scroll");
@@ -190,7 +201,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("does not copy when the history content itself is clicked", async () => {
-    render(<App />);
+    renderApp();
     const content = await screen.findByText("cargo test --workspace");
     fireEvent.click(content);
     expect(screen.queryByText("已复制")).not.toBeInTheDocument();
@@ -200,7 +211,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("shows the full clipboard content in a dialog", async () => {
-    render(<App />);
+    renderApp();
     const content = await screen.findByText(/会议结论：MVP 首发覆盖/);
     const row = content.closest("article");
     expect(row).not.toBeNull();
@@ -213,7 +224,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("shows a filled star before the source name only for favorited history", async () => {
-    render(<App />);
+    renderApp();
     const regularRow = (await screen.findByText("cargo test --workspace")).closest("article");
     const favoriteRow = screen.getByText("https://github.com/tauri-apps/tauri").closest("article");
 
@@ -227,7 +238,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("does not show a completed badge for successful file history", async () => {
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
 
@@ -242,7 +253,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("deletes one clipboard row", async () => {
-    render(<App />);
+    renderApp();
     expect(await screen.findByText("cargo test --workspace")).toBeInTheDocument();
     const deleteButtons = screen.getAllByRole("button", { name: "删除这条历史" });
     fireEvent.click(deleteButtons[0]);
@@ -251,7 +262,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("uses the shared modal shell for clearing history", async () => {
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: "清空" }));
     const dialog = screen.getByRole("dialog", { name: "清空粘贴板历史？" });
@@ -262,7 +273,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("shows the current device first, exposes the sync code, and narrows targets", async () => {
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
 
@@ -302,7 +313,7 @@ describe("SyncHalo shell", () => {
     );
     const refresh = vi.spyOn(api, "refreshDevices").mockResolvedValue(refreshedDevices);
 
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
     const initiallyOffline = screen.getByRole("button", { name: /Office Ubuntu/ });
@@ -318,7 +329,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("paginates file history 100 items per page and returns to the top", async () => {
-    const { container } = render(<App />);
+    const { container } = renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
     expect(await screen.findByText(/第 1 \/ 3 页 · 共 \d+ 条 · 每页 100 条/)).toBeInTheDocument();
@@ -332,7 +343,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("uses the merged drop zone for choosing and dropping files", async () => {
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
 
@@ -348,7 +359,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("sends to every online device when no sync target is selected", async () => {
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
 
@@ -367,7 +378,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("does not allow an offline device to be selected", async () => {
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
     const offlineDevice = screen.getByRole("button", { name: /Office Ubuntu/ });
@@ -379,7 +390,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("filters favorite file history and can resync an earlier file", async () => {
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
 
@@ -395,7 +406,7 @@ describe("SyncHalo shell", () => {
   });
 
   it("clears finished file history while preserving favorites and active tasks", async () => {
-    render(<App />);
+    renderApp();
     await screen.findByRole("heading", { name: "粘贴板历史" });
     fireEvent.click(screen.getByRole("button", { name: /同步文件/ }));
     expect(await screen.findByText("dataset.tar")).toBeInTheDocument();

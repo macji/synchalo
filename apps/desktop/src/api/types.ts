@@ -14,6 +14,7 @@ export type TransferState =
   | "cancelled";
 export type TransferHistoryFilter = "all" | "sending" | "receiving" | "active" | "failed";
 export type HistoryRetention = "none" | "oneDay" | "sevenDays" | "thirtyDays" | "forever";
+export type LanguagePreference = "system" | "en" | "zh-cn" | "zh-tw" | "ja" | "ko";
 export type FileDragDropEvent =
   | { type: "enter"; paths: string[] }
   | { type: "over" }
@@ -112,6 +113,7 @@ export interface SettingsView {
   notificationsEnabled: boolean;
   automaticUpdatesEnabled: boolean;
   ignoredUpdateVersion: string | null;
+  language: LanguagePreference;
 }
 
 export type SettingsPatch = Partial<SettingsView>;

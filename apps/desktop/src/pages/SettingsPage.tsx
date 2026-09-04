@@ -19,6 +19,7 @@ import type {
   DevicePlatform,
   DeviceView,
   HistoryRetention,
+  LanguagePreference,
   PairingCodeView,
   PlatformCapabilitiesView,
   SettingsPatch,
@@ -28,6 +29,8 @@ import { IconButton } from "../components/IconButton";
 import { ModalDialog } from "../components/ModalDialog";
 import { PageHeader } from "../components/PageHeader";
 import { Switch } from "../components/Switch";
+import { useI18n } from "../i18n";
+import type { MessageKey } from "../i18n/messages";
 import { formatRelative } from "../lib/format";
 
 interface SettingsPageProps {
@@ -49,12 +52,21 @@ interface SettingsPageProps {
   refreshingDevices: boolean;
 }
 
-const retentionOptions: Array<[HistoryRetention, string]> = [
-  ["none", "不保存"],
-  ["oneDay", "1 天"],
-  ["sevenDays", "7 天"],
-  ["thirtyDays", "30 天"],
-  ["forever", "永久"],
+const retentionOptions: Array<[HistoryRetention, MessageKey]> = [
+  ["none", "settings.retention.none"],
+  ["oneDay", "settings.retention.oneDay"],
+  ["sevenDays", "settings.retention.sevenDays"],
+  ["thirtyDays", "settings.retention.thirtyDays"],
+  ["forever", "settings.retention.forever"],
+];
+
+const languageOptions: Array<[LanguagePreference, MessageKey]> = [
+  ["system", "language.system"],
+  ["en", "language.en"],
+  ["zh-cn", "language.zhCN"],
+  ["zh-tw", "language.zhTW"],
+  ["ja", "language.ja"],
+  ["ko", "language.ko"],
 ];
 
 export function SettingsPage({
@@ -75,6 +87,7 @@ export function SettingsPage({
   onRevoke,
   refreshingDevices,
 }: SettingsPageProps) {
+  const { t } = useI18n();
   const [joinCode, setJoinCode] = useState("");
   const [clock, setClock] = useState(() => Date.now());
   const [deviceMenu, setDeviceMenu] = useState<string | null>(null);
@@ -98,43 +111,60 @@ export function SettingsPage({
 
   return (
     <section className="page settings-page" aria-labelledby="settings-title">
-      <PageHeader eyebrow="LOCAL TRUST" title="设置" />
+      <PageHeader eyebrow="LOCAL TRUST" title={t("settings.title")} />
       <div className="page-scroll settings-reading-width">
-        <SettingsSection title="添加设备">
+        <SettingsSection title={t("language.section")}>
+          <SettingRow description={t("language.description")} label={t("language.label")}>
+            <label className="select-control">
+              <select
+                aria-label={t("language.select")}
+                onChange={(event) => onUpdate({ language: event.target.value as LanguagePreference })}
+                value={settings.language}
+              >
+                {languageOptions.map(([value, label]) => (
+                  <option key={value} value={value}>{t(label)}</option>
+                ))}
+              </select>
+              <ChevronDown aria-hidden="true" size={14} />
+            </label>
+          </SettingRow>
+        </SettingsSection>
+
+        <SettingsSection title={t("settings.addDevice")}>
           <div className="pairing-panel">
             <div className="pairing-panel-main">
               <div className="pairing-label">
                 <ShieldCheck aria-hidden="true" size={17} />
-                <span>一次性同步码</span>
+                <span>{t("settings.oneTimeCode")}</span>
               </div>
               {pairingCode && remaining > 0 ? (
                 <div className="pairing-code-wrap">
-                  <strong className="pairing-code" aria-label={`同步码 ${pairingCode.code}`}>{pairingCode.code}</strong>
+                  <strong className="pairing-code" aria-label={t("settings.codeLabel", { code: pairingCode.code })}>{pairingCode.code}</strong>
                   <span className="countdown">00:{String(remaining).padStart(2, "0")}</span>
                 </div>
               ) : (
                 <div className="pairing-idle">
-                  <strong>尚未开放配对</strong>
-                  <span>生成后 60 秒内有效</span>
+                  <strong>{t("settings.pairingIdle")}</strong>
+                  <span>{t("settings.codeValidity")}</span>
                 </div>
               )}
             </div>
-            <p>在另一台设备输入此码。使用一次、超时或退出配对流程后立即失效。</p>
+            <p>{t("settings.pairingHint")}</p>
             <div className="pairing-actions">
               {pairingCode && remaining > 0 ? (
                 <button className="button button--secondary" onClick={() => onCopyCode(pairingCode.code)} type="button">
-                  <Copy size={15} />复制
+                  <Copy size={15} />{t("common.copy")}
                 </button>
               ) : null}
               <button className="button button--primary" onClick={onGenerateCode} type="button">
-                <RefreshCw size={15} />{pairingCode && remaining > 0 ? "刷新" : "生成同步码"}
+                <RefreshCw size={15} />{pairingCode && remaining > 0 ? t("common.refresh") : t("settings.generateCode")}
               </button>
               <button
                 className="button button--secondary"
                 onClick={() => setJoinDialogOpen(true)}
                 type="button"
               >
-                <UserPlus size={15} />加入
+                <UserPlus size={15} />{t("settings.join")}
               </button>
             </div>
           </div>
@@ -150,15 +180,15 @@ export function SettingsPage({
                   size={15}
                 />
               }
-              label="刷新局域网设备"
+              label={t("files.refreshDevices")}
               onClick={onRefreshDevices}
             />
           }
-          title="我的设备"
+          title={t("settings.myDevices")}
         >
           <DeviceGroup
             devices={online}
-            label="在线"
+            label={t("common.online")}
             menuDevice={deviceMenu}
             onMenu={setDeviceMenu}
             onPauseDevice={onPauseDevice}
@@ -166,7 +196,7 @@ export function SettingsPage({
           />
           <DeviceGroup
             devices={offline}
-            label="离线"
+            label={t("common.offline")}
             menuDevice={deviceMenu}
             onMenu={setDeviceMenu}
             onPauseDevice={onPauseDevice}
@@ -174,65 +204,65 @@ export function SettingsPage({
           />
         </SettingsSection>
 
-        <SettingsSection title="文件接收">
-          <SettingRow label="接收目录">
+        <SettingsSection title={t("settings.fileReceiving")}>
+          <SettingRow label={t("settings.receiveDirectory")}>
             <code className="path-value" title={settings.receiveDirectory}>{settings.receiveDirectory}</code>
-            <button className="button button--secondary button--small" onClick={onSelectDirectory} type="button">更改</button>
-            <IconButton icon={<FolderOpen size={16} />} label="打开接收目录" onClick={onOpenDirectory} />
+            <button className="button button--secondary button--small" onClick={onSelectDirectory} type="button">{t("settings.change")}</button>
+            <IconButton icon={<FolderOpen size={16} />} label={t("settings.openDirectory")} onClick={onOpenDirectory} />
           </SettingRow>
         </SettingsSection>
 
-        <SettingsSection title="同步与历史">
-          <SettingRow description="开启后，此设备发送并接收单条历史的删除与撤销。" label="删除同步">
-            <Switch checked={settings.deleteSyncEnabled} label="删除同步" onChange={(value) => onUpdate({ deleteSyncEnabled: value })} />
+        <SettingsSection title={t("settings.syncHistory")}>
+          <SettingRow description={t("settings.deleteSyncDescription")} label={t("settings.deleteSync")}>
+            <Switch checked={settings.deleteSyncEnabled} label={t("settings.deleteSync")} onChange={(value) => onUpdate({ deleteSyncEnabled: value })} />
           </SettingRow>
-          <SettingRow description="开启后，此设备发送并接收收藏状态变更。" label="收藏同步">
-            <Switch checked={settings.favoriteSyncEnabled} label="收藏同步" onChange={(value) => onUpdate({ favoriteSyncEnabled: value })} />
+          <SettingRow description={t("settings.favoriteSyncDescription")} label={t("settings.favoriteSync")}>
+            <Switch checked={settings.favoriteSyncEnabled} label={t("settings.favoriteSync")} onChange={(value) => onUpdate({ favoriteSyncEnabled: value })} />
           </SettingRow>
-          <SettingRow description="收藏条目不受自动清理影响。" label="保存历史">
+          <SettingRow description={t("settings.saveHistoryDescription")} label={t("settings.saveHistory")}>
             <label className="select-control">
               <select
-                aria-label="历史保留时间"
+                aria-label={t("settings.retentionLabel")}
                 onChange={(event) => onUpdate({ historyRetention: event.target.value as HistoryRetention })}
                 value={settings.historyRetention}
               >
-                {retentionOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                {retentionOptions.map(([value, label]) => <option key={value} value={value}>{t(label)}</option>)}
               </select>
               <ChevronDown aria-hidden="true" size={14} />
             </label>
           </SettingRow>
         </SettingsSection>
 
-        <SettingsSection title="启动与后台">
-          <SettingRow label="开机时启动 SyncHalo">
+        <SettingsSection title={t("settings.startupBackground")}>
+          <SettingRow label={t("settings.launchAtStartup")}>
             <Switch
               checked={settings.launchAtStartup}
               disabled={!capabilities.supportsAutostart}
-              label="开机时启动 SyncHalo"
+              label={t("settings.launchAtStartup")}
               onChange={(value) => onUpdate({ launchAtStartup: value })}
             />
           </SettingRow>
-          <SettingRow label="关闭窗口后留在系统托盘">
+          <SettingRow label={t("settings.keepInTray")}>
             <Switch
               checked={settings.keepInTray}
               disabled={!capabilities.supportsTray}
-              label="关闭窗口后留在系统托盘"
+              label={t("settings.keepInTray")}
               onChange={(value) => onUpdate({ keepInTray: value })}
             />
           </SettingRow>
           <SettingRow
             description={capabilities.platform === "linux"
-              ? "启动后及每 30 分钟检查；确认更新后由 Ubuntu 请求管理员授权并通过 APT 安装。"
-              : "启动后及每 30 分钟检查；开启后自动下载并等待确认安装，关闭后只提醒。"}
-            label="自动更新"
+              ? t("settings.updateLinuxDescription")
+              : t("settings.updateDescription")}
+            label={t("settings.automaticUpdates")}
           >
             <Switch
               checked={settings.automaticUpdatesEnabled}
-              label="自动更新"
+              label={t("settings.automaticUpdates")}
               onChange={(value) => onUpdate({ automaticUpdatesEnabled: value })}
             />
           </SettingRow>
-          <SettingRow description="立即查询 GitHub Releases；手动检查会显示曾忽略的版本。" label="检查更新">
+          <SettingRow description={t("settings.checkUpdatesDescription")} label={t("settings.checkUpdates")}>
             <button
               aria-busy={checkingForUpdates}
               className="button button--secondary button--small"
@@ -244,13 +274,13 @@ export function SettingsPage({
               type="button"
             >
               <RefreshCw className={checkingForUpdates ? "loading-spinner" : undefined} size={14} />
-              {checkingForUpdates ? "正在检查…" : "检查更新"}
+              {checkingForUpdates ? t("update.checking") : t("settings.checkUpdates")}
             </button>
           </SettingRow>
         </SettingsSection>
 
-        <SettingsSection title="当前设备">
-          <SettingRow label="设备名称">
+        <SettingsSection title={t("settings.currentDevice")}>
+          <SettingRow label={t("settings.deviceName")}>
             {editingName ? (
               <form
                 className="inline-edit"
@@ -261,7 +291,7 @@ export function SettingsPage({
                 }}
               >
                 <input autoFocus maxLength={64} onChange={(event) => setDeviceName(event.target.value)} value={deviceName} />
-                <button className="button button--primary button--small" type="submit"><Check size={14} />保存</button>
+                <button className="button button--primary button--small" type="submit"><Check size={14} />{t("common.save")}</button>
               </form>
             ) : (
               <>
@@ -274,7 +304,7 @@ export function SettingsPage({
                   }}
                   type="button"
                 >
-                  重命名
+                  {t("settings.rename")}
                 </button>
               </>
             )}
@@ -293,7 +323,7 @@ export function SettingsPage({
                 onClick={() => setJoinDialogOpen(false)}
                 type="button"
               >
-                取消
+                {t("common.cancel")}
               </button>
               <button
                 className="button button--primary"
@@ -301,14 +331,14 @@ export function SettingsPage({
                 form="join-device-form"
                 type="submit"
               >
-                加入设备
+                {t("settings.joinSubmit")}
               </button>
             </>
           }
           className="join-device-dialog"
           initialFocusRef={joinInputRef}
           onClose={() => setJoinDialogOpen(false)}
-          title="加入另一台设备"
+          title={t("settings.joinDevice")}
         >
           <form
             className="join-dialog-form"
@@ -320,7 +350,7 @@ export function SettingsPage({
               setJoinCode("");
             }}
           >
-            <label htmlFor="join-code-dialog">输入一次性同步码</label>
+            <label htmlFor="join-code-dialog">{t("settings.enterCode")}</label>
             <input
               autoComplete="one-time-code"
               id="join-code-dialog"
@@ -331,7 +361,7 @@ export function SettingsPage({
               ref={joinInputRef}
               value={joinCode}
             />
-            <p>请在另一台设备生成同步码，并在 60 秒内输入。</p>
+            <p>{t("settings.enterCodeHint")}</p>
           </form>
         </ModalDialog>
       ) : null}
@@ -386,6 +416,7 @@ function DeviceGroup({
   onPauseDevice: (device: DeviceView, paused: boolean) => void;
   onRevoke: (device: DeviceView) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="device-group">
       <h3>{label} <span>· {devices.length}</span></h3>
@@ -396,19 +427,21 @@ function DeviceGroup({
           <div className="device-copy">
             <strong>{device.name}</strong>
             <span>
-              {platformLabel(device.platform)}
+              {platformLabel(device.platform, t("common.unknownPlatform"))}
               {device.address ? ` · ${device.address.split(":")[0]}` : ""}
-              {device.paused ? " · 已暂停" : ""}
-              {!device.isCurrent && device.connectionState === "offline" ? ` · 上次在线 ${formatRelative(device.lastSeenAt)}` : ""}
+              {device.paused ? ` · ${t("common.paused")}` : ""}
+              {!device.isCurrent && device.connectionState === "offline"
+                ? ` · ${t("settings.lastOnline", { time: formatRelative(device.lastSeenAt, t) })}`
+                : ""}
             </span>
           </div>
           {device.isCurrent ? (
-            <span className="current-device-badge">当前设备</span>
+            <span className="current-device-badge">{t("common.currentDevice")}</span>
           ) : (
             <div className="device-menu-wrap">
               <IconButton
                 icon={<MoreHorizontal size={17} />}
-                label={`管理 ${device.name}`}
+                label={t("settings.manageDevice", { name: device.name })}
                 onClick={() => onMenu(menuDevice === device.id ? null : device.id)}
               />
               {menuDevice === device.id ? (
@@ -420,16 +453,16 @@ function DeviceGroup({
                     }}
                     type="button"
                   >
-                    <Unplug size={15} />{device.paused ? "恢复向此设备同步" : "暂停向此设备同步"}
+                    <Unplug size={15} />{device.paused ? t("settings.resumeDevice") : t("settings.pauseDevice")}
                   </button>
-                  <button className="is-danger" onClick={() => onRevoke(device)} type="button"><Trash2 size={15} />撤销设备</button>
+                  <button className="is-danger" onClick={() => onRevoke(device)} type="button"><Trash2 size={15} />{t("settings.revokeDevice")}</button>
                 </div>
               ) : null}
             </div>
           )}
         </div>
       )) : (
-        <div className="device-empty"><Circle size={12} />没有{label}设备</div>
+        <div className="device-empty"><Circle size={12} />{t("settings.noDevices", { status: label })}</div>
       )}
     </div>
   );
@@ -440,6 +473,6 @@ function formatPairingInput(value: string): string {
   return digits.length > 3 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : digits;
 }
 
-function platformLabel(platform: DevicePlatform): string {
-  return platform === "macos" ? "macOS" : platform === "linux" ? "Ubuntu / Linux" : "未知平台";
+function platformLabel(platform: DevicePlatform, unknown: string): string {
+  return platform === "macos" ? "macOS" : platform === "linux" ? "Ubuntu / Linux" : unknown;
 }

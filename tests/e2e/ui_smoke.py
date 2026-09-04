@@ -16,7 +16,12 @@ def main() -> None:
     console_errors: list[str] = []
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
-        page = browser.new_page(viewport={"width": 1280, "height": 800}, device_scale_factor=1)
+        context = browser.new_context(
+            locale="zh-CN",
+            viewport={"width": 1280, "height": 800},
+            device_scale_factor=1,
+        )
+        page = context.new_page()
         page.on(
             "console",
             lambda message: console_errors.append(message.text)
@@ -143,6 +148,19 @@ def main() -> None:
 
         page.get_by_role("button", name="设置 ⌘,").click()
         page.get_by_role("heading", name="设置").wait_for()
+        language_select = page.locator(".settings-section select").first
+        assert language_select.input_value() == "system"
+        for language, heading, document_language in (
+            ("en", "Settings", "en"),
+            ("zh-tw", "設定", "zh-tw"),
+            ("ja", "設定", "ja"),
+            ("ko", "설정", "ko"),
+            ("zh-cn", "设置", "zh-cn"),
+            ("system", "设置", "zh-cn"),
+        ):
+            language_select.select_option(language)
+            page.get_by_role("heading", name=heading).wait_for()
+            assert page.locator("html").get_attribute("lang") == document_language
         assert page.get_by_text("我的设备").is_visible()
         settings_refresh = page.get_by_role("button", name="刷新局域网设备")
         assert settings_refresh.is_visible()

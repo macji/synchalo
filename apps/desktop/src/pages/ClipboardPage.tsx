@@ -16,6 +16,7 @@ import type { ClipboardItemView } from "../api/types";
 import { IconButton } from "../components/IconButton";
 import { ModalDialog } from "../components/ModalDialog";
 import { PageHeader } from "../components/PageHeader";
+import { useI18n } from "../i18n";
 import { formatTime, historyGroup } from "../lib/format";
 
 interface ClipboardPageProps {
@@ -53,6 +54,7 @@ export function ClipboardPage({
   onPause,
   onOpenSettings,
 }: ClipboardPageProps) {
+  const { locale, t } = useI18n();
   const [query, setQuery] = useState(initialQuery);
   const [previewItem, setPreviewItem] = useState<ClipboardItemView | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -81,11 +83,11 @@ export function ClipboardPage({
   const groups = useMemo(() => {
     const result = new Map<string, ClipboardItemView[]>();
     for (const item of items) {
-      const label = historyGroup(item.createdAt);
+      const label = historyGroup(item.createdAt, locale, t);
       result.set(label, [...(result.get(label) ?? []), item]);
     }
     return [...result.entries()];
-  }, [items]);
+  }, [items, locale, t]);
 
   return (
     <section className="page clipboard-page" aria-labelledby="clipboard-title">
@@ -98,24 +100,24 @@ export function ClipboardPage({
                 autoComplete="off"
                 id="clipboard-search"
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="搜索历史"
+                placeholder={t("clipboard.search")}
                 value={query}
               />
               {query ? (
-                <IconButton icon={<X size={14} />} label="清除搜索" onClick={() => setQuery("")} />
+                <IconButton icon={<X size={14} />} label={t("clipboard.clearSearch")} onClick={() => setQuery("")} />
               ) : (
                 <kbd>⌘F</kbd>
               )}
             </label>
             <button
-              aria-label={favoritesOnly ? "显示全部历史" : "只看收藏"}
+              aria-label={favoritesOnly ? t("clipboard.showAll") : t("clipboard.favoritesOnly")}
               aria-pressed={favoritesOnly}
               className={`button button--secondary favorite-filter ${favoritesOnly ? "is-active" : ""}`}
               onClick={() => onRequestPage(query, !favoritesOnly, 1)}
               type="button"
             >
               <Star fill={favoritesOnly ? "currentColor" : "none"} size={15} />
-              收藏
+              {t("common.favorite")}
             </button>
             <button
               className="button button--quiet-danger"
@@ -123,19 +125,19 @@ export function ClipboardPage({
               onClick={onClear}
               type="button"
             >
-              清空
+              {t("common.clear")}
             </button>
           </>
         }
         eyebrow="TEXT HISTORY"
-        title="粘贴板历史"
+        title={t("clipboard.title")}
       />
 
       {paused ? (
         <div className="inline-notice inline-notice--warning" role="status">
           <Pause aria-hidden="true" size={16} />
-          <span>粘贴板自动同步已暂停，本机历史仍可查看和复制。</span>
-          <button onClick={() => onPause(false)} type="button">恢复</button>
+          <span>{t("clipboard.pauseNotice")}</span>
+          <button onClick={() => onPause(false)} type="button">{t("clipboard.resume")}</button>
         </div>
       ) : null}
 
@@ -150,7 +152,7 @@ export function ClipboardPage({
               <div className="history-list">
                 {groupItems.map((item) => (
                   <article
-                    aria-label={`历史内容：${item.content.slice(0, 40)}`}
+                    aria-label={t("clipboard.itemLabel", { content: item.content.slice(0, 40) })}
                     className="clipboard-row"
                     key={item.id}
                   >
@@ -159,7 +161,7 @@ export function ClipboardPage({
                       <div className="row-metadata">
                         {item.pinned ? (
                           <>
-                            <span aria-label="已收藏" className="favorite-marker" role="img">
+                            <span aria-label={t("clipboard.favorited")} className="favorite-marker" role="img">
                               <Star aria-hidden="true" fill="currentColor" size={13} />
                             </span>
                             <span aria-hidden="true">·</span>
@@ -167,31 +169,31 @@ export function ClipboardPage({
                         ) : null}
                         <span>{item.sourceDeviceName}</span>
                         <span aria-hidden="true">·</span>
-                        <span>{item.direction === "local" ? "本机" : "已接收"}</span>
+                        <span>{item.direction === "local" ? t("clipboard.local") : t("clipboard.received")}</span>
                         <span aria-hidden="true">·</span>
-                        <time dateTime={item.createdAt}>{formatTime(item.createdAt)}</time>
+                        <time dateTime={item.createdAt}>{formatTime(item.createdAt, locale, t)}</time>
                       </div>
                     </div>
-                    <div aria-label="历史操作" className="row-actions">
+                    <div aria-label={t("clipboard.actions")} className="row-actions">
                       <IconButton
                         icon={<Eye size={16} />}
-                        label="查看完整内容"
+                        label={t("clipboard.preview")}
                         onClick={() => setPreviewItem(item)}
                       />
                       <IconButton
                         icon={<Copy size={16} />}
-                        label="复制这条历史"
+                        label={t("clipboard.copyItem")}
                         onClick={() => onCopy(item)}
                         tone="accent"
                       />
                       <IconButton
                         icon={<Star fill={item.pinned ? "currentColor" : "none"} size={16} />}
-                        label={item.pinned ? "取消收藏" : "收藏"}
+                        label={item.pinned ? t("clipboard.unfavorite") : t("common.favorite")}
                         onClick={() => onPinnedChange(item, !item.pinned)}
                       />
                       <IconButton
                         icon={<Trash2 size={16} />}
-                        label="删除这条历史"
+                        label={t("clipboard.deleteItem")}
                         onClick={() => onDelete(item)}
                         tone="danger"
                       />
@@ -204,24 +206,24 @@ export function ClipboardPage({
         ) : (
           <div className="empty-state">
             <div className="empty-symbol"><ClipboardCopy size={24} /></div>
-            <h2>{query ? "没有匹配的历史" : favoritesOnly ? "还没有收藏内容" : "还没有粘贴板历史"}</h2>
-            <p>{query ? "换一个关键词试试。" : favoritesOnly ? "将鼠标移到历史上，点击星标即可收藏。" : "在任意已连接设备复制文本后，会显示在这里。"}</p>
+            <h2>{query ? t("clipboard.noMatch") : favoritesOnly ? t("clipboard.noFavorites") : t("clipboard.empty")}</h2>
+            <p>{query ? t("clipboard.tryAnother") : favoritesOnly ? t("clipboard.favoriteHint") : t("clipboard.emptyHint")}</p>
             {!query && !favoritesOnly ? (
               <button className="button button--secondary" onClick={onOpenSettings} type="button">
-                查看我的设备
+                {t("clipboard.viewDevices")}
               </button>
             ) : null}
           </div>
         )}
 
         {totalPages > 1 ? (
-          <nav aria-label="粘贴板历史分页" className="pagination">
+          <nav aria-label={t("clipboard.pagination")} className="pagination">
             <span className="pagination-summary">
-              第 {page} / {totalPages} 页 · 共 {totalItems} 条 · 每页 {pageSize} 条
+              {t("common.pagination", { page, pages: totalPages, count: totalItems, size: pageSize })}
             </span>
             <div className="pagination-controls">
               <button
-                aria-label="上一页"
+                aria-label={t("clipboard.previousPage")}
                 disabled={page <= 1}
                 onClick={() => changePage(page - 1)}
                 type="button"
@@ -240,7 +242,7 @@ export function ClipboardPage({
                 </button>
               ))}
               <button
-                aria-label="下一页"
+                aria-label={t("clipboard.nextPage")}
                 disabled={page >= totalPages}
                 onClick={() => changePage(page + 1)}
                 type="button"
@@ -250,7 +252,7 @@ export function ClipboardPage({
             </div>
           </nav>
         ) : totalItems > 0 ? (
-          <p className="single-page-summary">共 {totalItems} 条</p>
+          <p className="single-page-summary">{t("common.items", { count: totalItems })}</p>
         ) : null}
       </div>
 
@@ -258,10 +260,10 @@ export function ClipboardPage({
         <ModalDialog
           className="clipboard-preview-dialog"
           onClose={() => setPreviewItem(null)}
-          title="完整内容"
+          title={t("clipboard.fullContent")}
         >
           <textarea
-            aria-label="完整剪贴板内容"
+            aria-label={t("clipboard.fullContentLabel")}
             className="clipboard-preview-text"
             readOnly
             value={previewItem.content}

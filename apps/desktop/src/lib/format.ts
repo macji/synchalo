@@ -1,4 +1,5 @@
 import type { TransferState } from "../api/types";
+import type { SupportedLocale, Translate } from "../i18n";
 
 export function formatBytes(bytes: number): string {
   if (bytes < 1_000) return `${bytes} B`;
@@ -13,62 +14,52 @@ export function formatBytes(bytes: number): string {
   const digits = value >= 100 ? 0 : value >= 10 ? 1 : 2;
   return `${value.toFixed(digits)} ${unit}`;
 }
-export function formatTime(value: string): string {
+export function formatTime(value: string, locale: SupportedLocale, t: Translate): string {
   const date = new Date(value);
   const now = new Date();
   if (isSameDay(date, now)) {
-    return new Intl.DateTimeFormat("zh-CN", {
+    return new Intl.DateTimeFormat(locale, {
       hour: "2-digit",
       minute: "2-digit",
-      hour12: false,
     }).format(date);
   }
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   if (isSameDay(date, yesterday)) {
-    return `昨天 ${new Intl.DateTimeFormat("zh-CN", {
+    return `${t("time.yesterday")} ${new Intl.DateTimeFormat(locale, {
       hour: "2-digit",
       minute: "2-digit",
-      hour12: false,
     }).format(date)}`;
   }
-  return new Intl.DateTimeFormat("zh-CN", {
+  return new Intl.DateTimeFormat(locale, {
     month: "short",
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
-    hour12: false,
   }).format(date);
 }
 
-export function historyGroup(value: string): string {
+export function historyGroup(value: string, locale: SupportedLocale, t: Translate): string {
   const date = new Date(value);
   const now = new Date();
-  if (isSameDay(date, now)) return "今天";
+  if (isSameDay(date, now)) return t("time.today");
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (isSameDay(date, yesterday)) return "昨天";
-  return new Intl.DateTimeFormat("zh-CN", { month: "long", day: "numeric" }).format(date);
+  if (isSameDay(date, yesterday)) return t("time.yesterday");
+  return new Intl.DateTimeFormat(locale, { month: "long", day: "numeric" }).format(date);
 }
 
-export function formatRelative(value: string | null): string {
-  if (!value) return "从未连接";
+export function formatRelative(value: string | null, t: Translate): string {
+  if (!value) return t("time.never");
   const elapsed = Date.now() - new Date(value).getTime();
-  if (elapsed < 60_000) return "刚刚";
-  if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} 分钟前`;
-  if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} 小时前`;
-  return `${Math.floor(elapsed / 86_400_000)} 天前`;
+  if (elapsed < 60_000) return t("time.justNow");
+  if (elapsed < 3_600_000) return t("time.minutesAgo", { count: Math.floor(elapsed / 60_000) });
+  if (elapsed < 86_400_000) return t("time.hoursAgo", { count: Math.floor(elapsed / 3_600_000) });
+  return t("time.daysAgo", { count: Math.floor(elapsed / 86_400_000) });
 }
 
-export function transferLabel(state: TransferState): string {
-  return {
-    queued: "已排队",
-    transferring: "传输中",
-    verifying: "校验中",
-    completed: "已完成",
-    failed: "失败",
-    cancelled: "已取消",
-  }[state];
+export function transferLabel(state: TransferState, t: Translate): string {
+  return t(`files.state.${state}`);
 }
 
 function isSameDay(a: Date, b: Date): boolean {

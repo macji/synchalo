@@ -1,4 +1,5 @@
 mod commands;
+mod i18n;
 mod runtime;
 mod tray;
 
@@ -781,17 +782,11 @@ fn notify_update_status(app: &AppHandle, status: &UpdateStatus) {
     let Some(version) = status.version.as_deref() else {
         return;
     };
-    let (title, body) = if status.state == "ready" {
-        (
-            "SyncHalo 更新已下载",
-            format!("SyncHalo {version} 已完成验证，打开应用安装并重启。"),
-        )
-    } else {
-        (
-            "SyncHalo 发现新版本",
-            format!("SyncHalo {version} 可用，打开应用查看发布说明。"),
-        )
-    };
+    let language = app
+        .try_state::<Arc<AppRuntime>>()
+        .map(|runtime| runtime.settings().language)
+        .unwrap_or_default();
+    let (title, body) = i18n::update_notification(language, status.state == "ready", version);
     let _ = app.notification().builder().title(title).body(body).show();
 }
 

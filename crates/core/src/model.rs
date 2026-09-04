@@ -199,6 +199,18 @@ pub enum HistoryRetention {
     Forever,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum LanguagePreference {
+    #[default]
+    System,
+    En,
+    ZhCn,
+    ZhTw,
+    Ja,
+    Ko,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SettingsView {
@@ -216,6 +228,8 @@ pub struct SettingsView {
     pub automatic_updates_enabled: bool,
     #[serde(default)]
     pub ignored_update_version: Option<String>,
+    #[serde(default)]
+    pub language: LanguagePreference,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -230,6 +244,7 @@ pub struct SettingsPatch {
     pub keep_in_tray: Option<bool>,
     pub notifications_enabled: Option<bool>,
     pub automatic_updates_enabled: Option<bool>,
+    pub language: Option<LanguagePreference>,
 }
 
 fn default_true() -> bool {
@@ -354,6 +369,7 @@ mod tests {
         assert!(!settings.favorite_sync_enabled);
         assert!(settings.automatic_updates_enabled);
         assert_eq!(settings.ignored_update_version, None);
+        assert_eq!(settings.language, LanguagePreference::System);
     }
 
     #[test]
@@ -373,7 +389,25 @@ mod tests {
         .unwrap();
 
         assert_eq!(settings.ignored_update_version.as_deref(), Some("0.1.5"));
+        assert_eq!(settings.language, LanguagePreference::System);
         let serialized = serde_json::to_value(settings).unwrap();
         assert_eq!(serialized["ignoredUpdateVersion"], "0.1.5");
+    }
+
+    #[test]
+    fn language_preference_round_trips_and_rejects_unknown_values() {
+        for (json, expected) in [
+            ("\"system\"", LanguagePreference::System),
+            ("\"en\"", LanguagePreference::En),
+            ("\"zh-cn\"", LanguagePreference::ZhCn),
+            ("\"zh-tw\"", LanguagePreference::ZhTw),
+            ("\"ja\"", LanguagePreference::Ja),
+            ("\"ko\"", LanguagePreference::Ko),
+        ] {
+            let preference: LanguagePreference = serde_json::from_str(json).unwrap();
+            assert_eq!(preference, expected);
+            assert_eq!(serde_json::to_string(&preference).unwrap(), json);
+        }
+        assert!(serde_json::from_str::<LanguagePreference>("\"fr\"").is_err());
     }
 }
