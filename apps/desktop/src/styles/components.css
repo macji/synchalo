@@ -1395,6 +1395,12 @@ button.sync-device-row.is-selected {
   text-align: center;
 }
 
+.join-dialog-form .join-address-input {
+  font-size: 13px;
+  letter-spacing: 0.01em;
+  text-align: left;
+}
+
 .join-dialog-form input:focus,
 .inline-edit input:focus {
   border-color: var(--focus);

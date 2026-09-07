@@ -223,6 +223,9 @@ def main() -> None:
         join_dialog = page.get_by_role("dialog", name="加入另一台设备")
         join_dialog.wait_for()
         page.get_by_label("输入一次性同步码").fill("482913")
+        manual_address = page.get_by_label("设备 IP（自动发现失败时填写）")
+        manual_address.fill("10.253.18.45")
+        assert manual_address.input_value() == "10.253.18.45"
         page.screenshot(path=ARTIFACTS / "settings-join-dialog.png", full_page=True)
         page.get_by_role("button", name="取消", exact=True).click()
 

@@ -41,7 +41,7 @@ interface SettingsPageProps {
   capabilities: PlatformCapabilitiesView;
   onGenerateCode: () => void;
   onCopyCode: (code: string) => void;
-  onJoin: (code: string) => void;
+  onJoin: (code: string, address?: string) => void;
   onCheckForUpdates: () => Promise<void>;
   onRefreshDevices: () => void;
   onUpdate: (patch: SettingsPatch) => void;
@@ -89,6 +89,7 @@ export function SettingsPage({
 }: SettingsPageProps) {
   const { t } = useI18n();
   const [joinCode, setJoinCode] = useState("");
+  const [joinAddress, setJoinAddress] = useState("");
   const [clock, setClock] = useState(() => Date.now());
   const [deviceMenu, setDeviceMenu] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
@@ -345,9 +346,10 @@ export function SettingsPage({
             id="join-device-form"
             onSubmit={(event) => {
               event.preventDefault();
-              onJoin(joinCode);
+              onJoin(joinCode, joinAddress.trim() || undefined);
               setJoinDialogOpen(false);
               setJoinCode("");
+              setJoinAddress("");
             }}
           >
             <label htmlFor="join-code-dialog">{t("settings.enterCode")}</label>
@@ -362,6 +364,19 @@ export function SettingsPage({
               value={joinCode}
             />
             <p>{t("settings.enterCodeHint")}</p>
+            <label htmlFor="join-address-dialog">{t("settings.manualAddress")}</label>
+            <input
+              autoCapitalize="none"
+              autoComplete="off"
+              className="join-address-input"
+              id="join-address-dialog"
+              inputMode="decimal"
+              onChange={(event) => setJoinAddress(event.target.value)}
+              placeholder="10.253.18.45"
+              spellCheck={false}
+              value={joinAddress}
+            />
+            <p>{t("settings.manualAddressHint")}</p>
           </form>
         </ModalDialog>
       ) : null}

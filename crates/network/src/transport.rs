@@ -277,6 +277,72 @@ impl LanTransport {
         self.inner.connections.read().keys().copied().collect()
     }
 
+    /// Resolves the public pairing metadata exposed by an older SyncHalo peer when mDNS is
+    /// unavailable. The deliberately incomplete handshake is compatible with protocol v3: the
+    /// server returns its identity before either side proves knowledge of the one-time code. A
+    /// normal `pair_with` call must still complete the SPAKE2 proof and receive user approval.
+    pub async fn probe_pairing_peer(
+        &self,
+        address: SocketAddr,
+        code: &str,
+    ) -> Result<DiscoveredPeer, AppError> {
+        let password: String = code.chars().filter(char::is_ascii_digit).collect();
+        if password.len() != 6 {
+            return Err(AppError::InvalidInput(
+                "pairing code must contain six digits".to_owned(),
+            ));
+        }
+
+        timeout(HANDSHAKE_TIMEOUT, async {
+            let identity = self.inner.identity.read().clone();
+            let client_wire = WireDevice::from_identity(&identity);
+            let (_, spake_message) = Spake2::<Ed25519Group>::start_a(
+                &Password::new(password.as_bytes()),
+                &Identity::new(identity.device_id.as_bytes()),
+                &Identity::new(Uuid::nil().as_bytes()),
+            );
+            let connection = self
+                .inner
+                .endpoint
+                .connect_with(insecure_client_config()?, address, SERVER_NAME)
+                .map_err(network_error)?
+                .await
+                .map_err(network_error)?;
+            let (mut send, mut recv) = connection.open_bi().await.map_err(network_error)?;
+            write_frame(
+                &mut send,
+                &WireFrame::PairStart {
+                    device: client_wire,
+                    spake_message,
+                },
+            )
+            .await?;
+            let challenge: WireFrame = read_frame(&mut recv).await?;
+            connection.close(0_u32.into(), b"manual pairing probe complete");
+            let server_wire = match challenge {
+                WireFrame::PairChallenge { device, .. } => device,
+                WireFrame::Error { message } => return Err(AppError::Network(message)),
+                _ => return Err(protocol_error("expected pairing challenge")),
+            };
+            let device_id = server_wire.device_id;
+            let device_name = server_wire.device_name.clone();
+            let platform = server_wire.platform;
+            let protocol_version = server_wire.protocol_version;
+            server_wire.into_trusted_peer()?;
+            Ok(DiscoveredPeer {
+                device_id,
+                device_name,
+                platform,
+                address,
+                pairing_open: true,
+                protocol_version,
+                fullname: format!("manual-{device_id}"),
+            })
+        })
+        .await
+        .map_err(|_| AppError::Network(format!("pairing probe to {address} timed out")))?
+    }
+
     pub async fn pair_with(
         &self,
         discovered: &DiscoveredPeer,
@@ -1820,18 +1886,17 @@ mod tests {
             let client = client.clone();
             async move { client.run().await }
         });
-        let discovered = DiscoveredPeer {
-            device_id: server_id,
-            device_name: "Server".to_owned(),
-            platform: DevicePlatform::Linux,
-            address: SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::LOCALHOST),
-                server.local_addr().unwrap().port(),
-            ),
-            pairing_open: true,
-            protocol_version: PROTOCOL_VERSION,
-            fullname: "server._synchalo._udp.local.".to_owned(),
-        };
+        let address = SocketAddr::new(
+            IpAddr::V4(Ipv4Addr::LOCALHOST),
+            server.local_addr().unwrap().port(),
+        );
+        let discovered = client
+            .probe_pairing_peer(address, &code.code)
+            .await
+            .unwrap();
+        assert_eq!(discovered.device_id, server_id);
+        assert_eq!(discovered.address, address);
+        assert!(discovered.pairing_open);
 
         let pair_task = tokio::spawn({
             let client = client.clone();
@@ -1839,16 +1904,15 @@ mod tests {
             let discovered = discovered.clone();
             async move { client.pair_with(&discovered, &code).await }
         });
-        let approval = timeout(Duration::from_secs(3), server_events.recv())
-            .await
-            .unwrap()
-            .unwrap();
-        let request_id = match approval {
-            TransportEvent::PairingApprovalRequested(candidate) => {
+        let request_id = loop {
+            let event = timeout(Duration::from_secs(3), server_events.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            if let TransportEvent::PairingApprovalRequested(candidate) = event {
                 assert_eq!(candidate.device_id, client_id);
-                candidate.request_id
+                break candidate.request_id;
             }
-            other => panic!("expected approval request, got {other:?}"),
         };
         assert!(server.respond_to_pairing(request_id, true));
         let peer = pair_task.await.unwrap().unwrap();

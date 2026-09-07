@@ -72,13 +72,18 @@ describe("SyncHalo shell", () => {
     }
     expect(screen.queryByText("传输完成与错误通知")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("加入另一台设备")).not.toBeInTheDocument();
+    const join = vi.spyOn(api, "joinWithCode");
     fireEvent.click(screen.getByRole("button", { name: /^加入$/ }));
     const joinDialog = screen.getByRole("dialog", { name: "加入另一台设备" });
     expect(joinDialog).toHaveClass("dialog-backdrop");
     const joinInput = screen.getByLabelText("输入一次性同步码");
     fireEvent.change(joinInput, { target: { value: "482913" } });
+    fireEvent.change(screen.getByLabelText("设备 IP（自动发现失败时填写）"), {
+      target: { value: "10.253.18.45" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "加入设备" }));
     await waitFor(() => expect(joinDialog).not.toBeInTheDocument());
+    expect(join).toHaveBeenCalledWith("482 913", "10.253.18.45");
   });
 
   it("shows release notes and allows updating or ignoring when automatic updates are off", async () => {

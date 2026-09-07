@@ -679,7 +679,7 @@ export default function App() {
         onGenerateCode={() => void api.generatePairingCode().then((pairingCode) => {
           setSnapshot((current) => current && { ...current, pairingCode });
         }).catch(reportError)}
-        onJoin={(code) => void api.joinWithCode(code).then((device) => {
+        onJoin={(code, address) => void api.joinWithCode(code, address).then((device) => {
           setSnapshot((current) => current
             ? withDevices(current, [
                 ...current.devices.filter((entry) => entry.id !== device.id),

@@ -16,7 +16,7 @@ Install the latest stable SyncHalo release from https://github.com/macji/synchal
 
 ## Features
 
-- Automatically discovers devices on the local network through mDNS, with manual discovery and reconnection refresh.
+- Automatically discovers devices on the local network through mDNS, with an IP-address fallback and saved-address reconnection when multicast discovery is unavailable.
 - Pairs devices using a 60-second one-time sync code; an existing device must still approve each new device.
 - Synchronizes plain-text clipboard content between trusted devices in real time while suppressing remote-write sync loops.
 - Sends files through drag and drop, a native file picker, or in-page paste; when no destination is selected, all online devices receive the files.
@@ -112,7 +112,7 @@ Until the SignPath Foundation review is complete, official Windows packages are 
 
 1. Make sure both devices are on the same local network and that the firewall allows SyncHalo's local network traffic.
 2. Generate a one-time sync code from **Settings** or **File sync** on the existing device.
-3. Select **Join** on the other device and enter the sync code.
+3. Select **Join** on the other device and enter the sync code. If automatic discovery is unavailable, also enter the existing device's IP address; SyncHalo tries UDP ports 53317–53327 when no port is specified.
 4. Return to the existing device and approve the new device name and platform.
 5. After pairing, text synchronizes automatically. Files must be sent explicitly by choosing, dropping, or pasting them on the File sync page.
 

@@ -209,8 +209,8 @@ export const api = {
     if (isTauri) return command("respond_to_pairing", { requestId, accepted });
   },
 
-  async joinWithCode(code: string): Promise<DeviceView> {
-    if (isTauri) return command("join_with_code", { code });
+  async joinWithCode(code: string, address?: string): Promise<DeviceView> {
+    if (isTauri) return command("join_with_code", { code, address: address || null });
     if (code.replace(/\D/g, "").length !== 6) throw normalizeError("请输入 6 位同步码");
     return structuredClone(mock.devices[1]);
   },

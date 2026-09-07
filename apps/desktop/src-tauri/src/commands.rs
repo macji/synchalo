@@ -139,8 +139,12 @@ pub async fn respond_to_pairing(
 pub async fn join_with_code(
     state: State<'_, Arc<AppRuntime>>,
     code: String,
+    address: Option<String>,
 ) -> CommandResult<synchalo_core::DeviceView> {
-    state.join_with_code(&code).await.map_err(Into::into)
+    state
+        .join_with_code(&code, address.as_deref())
+        .await
+        .map_err(Into::into)
 }
 
 #[tauri::command]
