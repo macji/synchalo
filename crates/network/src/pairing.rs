@@ -46,9 +46,9 @@ impl PairingCodeManager {
     pub fn generate(&self, ttl: Duration) -> Result<PairingCodeView, AppError> {
         let mut random = [0_u8; 4];
         getrandom::fill(&mut random).map_err(|error| AppError::Internal(error.to_string()))?;
-        let value = u32::from_le_bytes(random) % 1_000_000;
-        let compact = format!("{value:06}");
-        let code = format!("{} {}", &compact[..3], &compact[3..]);
+        let value = u32::from_le_bytes(random) % 10_000;
+        let compact = format!("{value:04}");
+        let code = compact.clone();
         let expires_at = Utc::now()
             + chrono::Duration::from_std(ttl)
                 .map_err(|error| AppError::Internal(error.to_string()))?;
@@ -71,7 +71,7 @@ impl PairingCodeManager {
             state.active = None;
         }
         state.active.as_ref().map(|active| PairingCodeView {
-            code: format!("{} {}", &active.code[..3], &active.code[3..]),
+            code: active.code.clone(),
             expires_at: active.expires_at,
         })
     }
@@ -94,7 +94,7 @@ impl PairingCodeManager {
             .filter(|char| char.is_ascii_digit())
             .collect();
         let matches =
-            normalized.len() == 6 && active.code.as_bytes().ct_eq(normalized.as_bytes()).into();
+            normalized.len() == 4 && active.code.as_bytes().ct_eq(normalized.as_bytes()).into();
         if matches {
             state.active = None;
         }
@@ -154,11 +154,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn code_is_six_digits_and_single_use() {
+    fn four_digit_codes_expire_and_do_not_accept_legacy_length() {
+        let manager = PairingCodeManager::new();
+        let view = manager.generate(Duration::from_secs(60)).unwrap();
+        assert_eq!(manager.current().unwrap().code, view.code);
+        assert!(
+            !manager
+                .validate_and_consume(&format!("{}00", view.code))
+                .unwrap()
+        );
+        assert!(manager.validate_and_consume(&view.code).unwrap());
+        manager.generate(Duration::ZERO).unwrap();
+        assert!(manager.current().is_none());
+    }
+
+    #[test]
+    fn code_is_four_digits_and_single_use() {
         let manager = PairingCodeManager::new();
         let view = manager.generate(Duration::from_secs(60)).unwrap();
         let compact = view.code.replace(' ', "");
-        assert_eq!(compact.len(), 6);
+        assert_eq!(compact.len(), 4);
         assert!(compact.chars().all(|char| char.is_ascii_digit()));
         assert!(manager.validate_and_consume(&compact).unwrap());
         assert!(!manager.validate_and_consume(&compact).unwrap());
@@ -168,10 +183,10 @@ mod tests {
     fn pairing_attempts_are_rate_limited() {
         let manager = PairingCodeManager::new();
         let generated = manager.generate(Duration::from_secs(60)).unwrap();
-        let candidate = if generated.code.replace(' ', "") == "000000" {
-            "111111"
+        let candidate = if generated.code.replace(' ', "") == "0000" {
+            "1111"
         } else {
-            "000000"
+            "0000"
         };
         for _ in 0..MAX_ATTEMPTS_PER_MINUTE {
             assert!(!manager.validate_and_consume(candidate).unwrap());

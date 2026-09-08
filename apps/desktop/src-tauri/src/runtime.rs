@@ -286,15 +286,10 @@ impl AppRuntime {
             last_sync_at: None,
             paused: false,
         }];
-        let nearby = self.nearby.read();
         let online_ids = self.transport.online_peer_ids();
         for mut device in self.database.list_devices()? {
             if online_ids.contains(&device.id) {
                 device.connection_state = DeviceConnectionState::Online;
-                device.address = nearby
-                    .get(&device.id)
-                    .map(|peer| peer.address.to_string())
-                    .or(device.address);
                 device.last_seen_at = Some(now);
             } else {
                 device.connection_state = DeviceConnectionState::Offline;
@@ -526,9 +521,9 @@ impl AppRuntime {
         manual_address: Option<&str>,
     ) -> Result<DeviceView, AppError> {
         let normalized: String = code.chars().filter(|char| char.is_ascii_digit()).collect();
-        if normalized.len() != 6 {
+        if normalized.len() != 4 {
             return Err(AppError::InvalidInput(
-                "pairing code must contain six digits".to_owned(),
+                "pairing code must contain four digits".to_owned(),
             ));
         }
         let mut peers: Vec<_> = if let Some(address) = manual_address
@@ -542,8 +537,16 @@ impl AppRuntime {
             self.nearby
                 .read()
                 .values()
-                .filter(|peer| peer.pairing_open)
-                .cloned()
+                .filter(|peer| {
+                    peer.pairing_open && peer.protocol_version == synchalo_core::PROTOCOL_VERSION
+                })
+                .flat_map(|peer| {
+                    peer.addresses.iter().map(|address| {
+                        let mut candidate = peer.clone();
+                        candidate.address = *address;
+                        candidate
+                    })
+                })
                 .collect()
         };
         if peers.is_empty() {
@@ -554,7 +557,7 @@ impl AppRuntime {
         peers.sort_by_key(|peer| peer.device_id);
         let mut last_error = None;
         let mut paired = None;
-        for peer in peers.into_iter().take(3) {
+        for peer in peers.into_iter().take(48) {
             match self.transport.pair_with(&peer, &normalized).await {
                 Ok(trusted) => {
                     paired = Some((peer, trusted));
@@ -574,6 +577,7 @@ impl AppRuntime {
             self.transport.set_space_id(trusted.space_id);
         }
         self.persist_trusted_peer(&trusted, Some(peer.address))?;
+        self.schedule_reconnect(trusted.device_id);
         self.devices()?
             .into_iter()
             .find(|device| device.id == trusted.device_id)
@@ -585,7 +589,7 @@ impl AppRuntime {
         address: &str,
         code: &str,
     ) -> Result<DiscoveredPeer, AppError> {
-        let targets = manual_pairing_addresses(address)?;
+        let targets = resolve_manual_pairing_addresses(address).await?;
         let mut probes = tokio::task::JoinSet::new();
         for target in targets {
             let transport = self.transport.clone();
@@ -1234,6 +1238,7 @@ impl AppRuntime {
                     TransportEvent::Paired {
                         peer,
                         adopted_space_id,
+                        address,
                         ..
                     } => {
                         if runtime.identity.read().space_id != adopted_space_id {
@@ -1241,12 +1246,8 @@ impl AppRuntime {
                             runtime.identity.write().space_id = adopted_space_id;
                             runtime.transport.set_space_id(adopted_space_id);
                         }
-                        let address = runtime
-                            .nearby
-                            .read()
-                            .get(&peer.device_id)
-                            .map(|discovered| discovered.address);
-                        runtime.persist_trusted_peer(&peer, address)?;
+                        runtime.persist_trusted_peer(&peer, Some(address))?;
+                        runtime.schedule_reconnect(peer.device_id);
                         if let Some(discovery) = runtime.discovery.lock().as_ref() {
                             let _ = discovery.set_pairing_open(false);
                         }
@@ -1356,7 +1357,7 @@ impl AppRuntime {
             id: peer.device_id,
             name: peer.device_name.clone(),
             platform: peer.platform,
-            connection_state: if address.is_some() {
+            connection_state: if self.transport.online_peer_ids().contains(&peer.device_id) {
                 DeviceConnectionState::Online
             } else {
                 DeviceConnectionState::Offline
@@ -1423,10 +1424,15 @@ impl AppRuntime {
                 {
                     break;
                 }
-                let Some(address) = runtime.known_peer_address(peer_id) else {
+                let addresses = runtime.known_peer_addresses(peer_id);
+                if addresses.is_empty() {
                     break;
-                };
-                if let Err(error) = runtime.transport.connect_trusted(peer_id, address).await {
+                }
+                if let Err(error) = runtime
+                    .transport
+                    .connect_trusted_addresses(peer_id, &addresses)
+                    .await
+                {
                     let space_mismatch = matches!(&error, AppError::SyncSpaceMismatch);
                     runtime.handle_reconnect_error(peer_id, error);
                     if space_mismatch {
@@ -1450,21 +1456,17 @@ impl AppRuntime {
         }
     }
 
-    fn known_peer_address(&self, peer_id: Uuid) -> Option<std::net::SocketAddr> {
-        self.nearby
-            .read()
-            .get(&peer_id)
-            .map(|peer| peer.address)
-            .or_else(|| {
-                self.database
-                    .list_devices()
-                    .ok()?
-                    .into_iter()
-                    .find(|device| device.id == peer_id)?
-                    .address?
-                    .parse()
-                    .ok()
-            })
+    fn known_peer_addresses(&self, peer_id: Uuid) -> Vec<std::net::SocketAddr> {
+        let discovered = self.nearby.read().get(&peer_id).cloned();
+        let saved = self.database.list_devices().ok().and_then(|devices| {
+            devices
+                .into_iter()
+                .find(|device| device.id == peer_id)?
+                .address?
+                .parse()
+                .ok()
+        });
+        reconnect_addresses(discovered.as_ref(), saved)
     }
 
     fn handle_reconnect_error(&self, peer_id: Uuid, error: AppError) {
@@ -1951,25 +1953,9 @@ impl AppRuntime {
                 match event {
                     DiscoveryEvent::Resolved(peer) => {
                         let peer_id = peer.device_id;
-                        let address = peer.address;
-                        let should_connect = runtime.transport.trusted_peer(peer_id).is_some()
-                            && !runtime.transport.online_peer_ids().contains(&peer_id)
-                            && runtime.should_initiate_connection(peer_id)
-                            && peer.protocol_version == synchalo_core::PROTOCOL_VERSION;
                         runtime.nearby.write().insert(peer_id, peer);
                         runtime.emit_devices();
-                        if should_connect {
-                            let connect_runtime = runtime.clone();
-                            tauri::async_runtime::spawn(async move {
-                                if let Err(error) = connect_runtime
-                                    .transport
-                                    .connect_trusted(peer_id, address)
-                                    .await
-                                {
-                                    connect_runtime.handle_reconnect_error(peer_id, error);
-                                }
-                            });
-                        }
+                        runtime.schedule_reconnect(peer_id);
                     }
                     DiscoveryEvent::Removed { fullname } => {
                         runtime
@@ -2039,6 +2025,89 @@ fn start_transport(
     Err(last_error.unwrap_or_else(|| {
         AppError::Network("no QUIC port is available in the configured range".to_owned())
     }))
+}
+
+fn reconnect_addresses(
+    peer: Option<&DiscoveredPeer>,
+    saved: Option<std::net::SocketAddr>,
+) -> Vec<std::net::SocketAddr> {
+    let mut addresses = Vec::new();
+    // A previously authenticated endpoint remains useful when multicast is unavailable.
+    if let Some(saved) = saved {
+        addresses.push(saved);
+    }
+    if let Some(peer) = peer.filter(|p| p.protocol_version == synchalo_core::PROTOCOL_VERSION) {
+        for address in &peer.addresses {
+            if !addresses.contains(address) {
+                addresses.push(*address);
+            }
+        }
+    }
+    // A previous instance may have occupied the default port. Recover after restart
+    // even when no multicast announcement can cross the router.
+    if let Some(saved) = saved {
+        for port in DEFAULT_QUIC_PORT..=DEFAULT_QUIC_PORT + 10 {
+            let address = std::net::SocketAddr::new(saved.ip(), port);
+            if !addresses.contains(&address) {
+                addresses.push(address);
+            }
+        }
+    }
+    addresses
+}
+
+async fn resolve_manual_pairing_addresses(
+    input: &str,
+) -> Result<Vec<std::net::SocketAddr>, AppError> {
+    if let Ok(addresses) = manual_pairing_addresses(input) {
+        return Ok(addresses);
+    }
+    let input = input.trim();
+    let (host, port) = match input.rsplit_once(':') {
+        Some((host, port)) => (
+            host,
+            Some(
+                port.parse::<u16>()
+                    .map_err(|_| AppError::InvalidInput("invalid port".into()))?,
+            ),
+        ),
+        None => (input, None),
+    };
+    if host.is_empty()
+        || host.len() > 253
+        || !host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.')
+        || port == Some(0)
+    {
+        return Err(AppError::InvalidInput(
+            "enter a valid device IP or hostname, optionally followed by a port".into(),
+        ));
+    }
+    let resolved = tokio::time::timeout(
+        Duration::from_secs(5),
+        tokio::net::lookup_host((host, port.unwrap_or(DEFAULT_QUIC_PORT))),
+    )
+    .await
+    .map_err(|_| AppError::Network("device hostname lookup timed out".into()))?
+    .map_err(|error| AppError::Network(format!("device hostname lookup failed: {error}")))?;
+    let mut addresses = Vec::new();
+    for address in resolved.filter(|a| a.is_ipv4()).take(16) {
+        validate_manual_pairing_ip(address.ip())?;
+        let ports = port.map_or(DEFAULT_QUIC_PORT..=DEFAULT_QUIC_PORT + 10, |p| p..=p);
+        for port in ports {
+            let target = std::net::SocketAddr::new(address.ip(), port);
+            if !addresses.contains(&target) {
+                addresses.push(target);
+            }
+        }
+    }
+    if addresses.is_empty() {
+        return Err(AppError::Network(
+            "device hostname has no usable IPv4 address".into(),
+        ));
+    }
+    Ok(addresses)
 }
 
 fn manual_pairing_addresses(input: &str) -> Result<Vec<std::net::SocketAddr>, AppError> {
@@ -2396,6 +2465,68 @@ mod tests {
     use tempfile::tempdir;
 
     use super::*;
+
+    #[test]
+    fn reconnect_uses_saved_endpoint_without_multicast_and_all_discovered_subnets() {
+        let saved = "10.253.19.25:53317".parse().unwrap();
+        assert_eq!(
+            reconnect_addresses(None, Some(saved)),
+            manual_pairing_addresses("10.253.19.25").unwrap()
+        );
+        let mut peer = DiscoveredPeer {
+            device_id: Uuid::new_v4(),
+            device_name: "Ubuntu".into(),
+            platform: synchalo_core::DevicePlatform::Linux,
+            address: saved,
+            addresses: vec![
+                saved,
+                "172.17.0.1:53317".parse().unwrap(),
+                "10.253.18.25:53317".parse().unwrap(),
+            ],
+            pairing_open: true,
+            protocol_version: synchalo_core::PROTOCOL_VERSION,
+            fullname: "ubuntu".into(),
+        };
+        assert!(reconnect_addresses(Some(&peer), Some(saved)).starts_with(&peer.addresses));
+        peer.protocol_version = 2;
+        assert_eq!(
+            reconnect_addresses(Some(&peer), Some(saved)),
+            manual_pairing_addresses("10.253.19.25").unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn manual_targets_support_routed_subnets_and_reject_invalid_hosts() {
+        assert_eq!(
+            resolve_manual_pairing_addresses("10.253.19.25:53318")
+                .await
+                .unwrap(),
+            vec![
+                "10.253.19.25:53318"
+                    .parse::<std::net::SocketAddr>()
+                    .unwrap()
+            ]
+        );
+        assert_eq!(
+            resolve_manual_pairing_addresses("10.235.18.25")
+                .await
+                .unwrap()
+                .len(),
+            11
+        );
+        for invalid in [
+            "localhost:53317",
+            "https://ubuntu",
+            "ubuntu:0",
+            "ubuntu:99999",
+            "127.0.0.1",
+        ] {
+            assert!(
+                resolve_manual_pairing_addresses(invalid).await.is_err(),
+                "{invalid}"
+            );
+        }
+    }
 
     #[test]
     fn finalized_local_key_bypasses_keychain_migration() {

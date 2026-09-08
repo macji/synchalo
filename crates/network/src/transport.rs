@@ -114,6 +114,7 @@ pub enum TransportEvent {
     Paired {
         peer: TrustedPeer,
         adopted_space_id: Uuid,
+        address: SocketAddr,
         incoming: bool,
     },
     PeerOnline {
@@ -287,9 +288,9 @@ impl LanTransport {
         code: &str,
     ) -> Result<DiscoveredPeer, AppError> {
         let password: String = code.chars().filter(char::is_ascii_digit).collect();
-        if password.len() != 6 {
+        if password.len() != 4 {
             return Err(AppError::InvalidInput(
-                "pairing code must contain six digits".to_owned(),
+                "pairing code must contain four digits".to_owned(),
             ));
         }
 
@@ -334,6 +335,7 @@ impl LanTransport {
                 device_name,
                 platform,
                 address,
+                addresses: vec![address],
                 pairing_open: true,
                 protocol_version,
                 fullname: format!("manual-{device_id}"),
@@ -349,9 +351,9 @@ impl LanTransport {
         code: &str,
     ) -> Result<TrustedPeer, AppError> {
         let password: String = code.chars().filter(char::is_ascii_digit).collect();
-        if password.len() != 6 {
+        if password.len() != 4 {
             return Err(AppError::InvalidInput(
-                "pairing code must contain six digits".to_owned(),
+                "pairing code must contain four digits".to_owned(),
             ));
         }
         let identity = self.inner.identity.read().clone();
@@ -422,14 +424,56 @@ impl LanTransport {
         let _ = self.inner.events_tx.send(TransportEvent::Paired {
             peer: peer.clone(),
             adopted_space_id,
+            address: discovered.address,
             incoming: false,
         });
-        self.connect_trusted(peer.device_id, discovered.address)
-            .await?;
+        // Pairing is already approved and authenticated. A temporary reconnect failure must
+        // not turn it into a failed pairing (the one-time code has already been consumed).
+        if let Err(error) = self
+            .connect_trusted(peer.device_id, discovered.address)
+            .await
+        {
+            let _ = self
+                .inner
+                .events_tx
+                .send(TransportEvent::Error(error.to_string()));
+        }
         Ok(peer)
     }
 
+    /// Try bounded endpoints without changing the pinned identity or trust on failure.
+    pub async fn connect_trusted_addresses(
+        &self,
+        peer_id: Uuid,
+        addresses: &[SocketAddr],
+    ) -> Result<(), AppError> {
+        let mut last_error = AppError::Network("no known address for paired device".into());
+        for address in addresses.iter().take(27) {
+            match self.connect_trusted(peer_id, *address).await {
+                Ok(()) => return Ok(()),
+                Err(AppError::SyncSpaceMismatch) => return Err(AppError::SyncSpaceMismatch),
+                Err(error) => last_error = error,
+            }
+        }
+        Err(last_error)
+    }
+
     pub async fn connect_trusted(
+        &self,
+        peer_id: Uuid,
+        address: SocketAddr,
+    ) -> Result<(), AppError> {
+        timeout(
+            HANDSHAKE_TIMEOUT,
+            self.connect_trusted_inner(peer_id, address),
+        )
+        .await
+        .map_err(|_| {
+            AppError::Network(format!("authenticated connection to {address} timed out"))
+        })?
+    }
+
+    async fn connect_trusted_inner(
         &self,
         peer_id: Uuid,
         address: SocketAddr,
@@ -898,6 +942,15 @@ impl LanTransport {
         if !self.inner.pairing.consume_active_code(&code) {
             return Err(AppError::Network("pairing code expired".to_owned()));
         }
+        let mut peer = pending_peer;
+        peer.space_id = server_identity.space_id;
+        self.add_trusted_peer(peer.clone());
+        let _ = self.inner.events_tx.send(TransportEvent::Paired {
+            peer,
+            adopted_space_id: server_identity.space_id,
+            address: connection.remote_address(),
+            incoming: true,
+        });
         let server_proof = pairing_proof(&shared_key, b"server", &transcript)?;
         write_frame(
             &mut send,
@@ -907,14 +960,6 @@ impl LanTransport {
         )
         .await?;
         send.finish().map_err(network_error)?;
-        let mut peer = pending_peer;
-        peer.space_id = server_identity.space_id;
-        self.add_trusted_peer(peer.clone());
-        let _ = self.inner.events_tx.send(TransportEvent::Paired {
-            peer,
-            adopted_space_id: server_identity.space_id,
-            incoming: true,
-        });
         let _ = timeout(Duration::from_secs(2), send.stopped()).await;
         connection.close(0_u32.into(), b"pairing complete");
         Ok(())
@@ -974,13 +1019,26 @@ impl LanTransport {
     }
 
     fn register_connection(&self, peer_id: Uuid, connection: Connection) {
-        if let Some(previous) = self
-            .inner
-            .connections
-            .write()
-            .insert(peer_id, connection.clone())
+        // Both peers can reconnect at once after a network change. Agree on the same
+        // direction so they do not each close the connection retained by the other.
+        let preferred_side = if self.inner.identity.read().device_id < peer_id {
+            quinn::Side::Client
+        } else {
+            quinn::Side::Server
+        };
         {
-            previous.close(0_u32.into(), b"replaced by newer connection");
+            let mut connections = self.inner.connections.write();
+            if let Some(previous) = connections.get(&peer_id)
+                && previous.close_reason().is_none()
+                && previous.side() == preferred_side
+                && connection.side() != preferred_side
+            {
+                connection.close(0_u32.into(), b"duplicate connection");
+                return;
+            }
+            if let Some(previous) = connections.insert(peer_id, connection.clone()) {
+                previous.close(0_u32.into(), b"replaced by preferred connection");
+            }
         }
         let _ = self.inner.events_tx.send(TransportEvent::PeerOnline {
             device_id: peer_id,
@@ -1003,14 +1061,12 @@ impl LanTransport {
                     }
                 });
             }
-            let should_remove = transport
-                .inner
-                .connections
-                .read()
+            let mut connections = transport.inner.connections.write();
+            if connections
                 .get(&peer_id)
-                .is_some_and(|current| current.stable_id() == connection.stable_id());
-            if should_remove {
-                transport.inner.connections.write().remove(&peer_id);
+                .is_some_and(|current| current.stable_id() == connection.stable_id())
+            {
+                connections.remove(&peer_id);
                 let _ = transport
                     .inner
                     .events_tx
@@ -1851,8 +1907,121 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn pairs_then_authenticates_and_delivers_signed_clipboard() {
-        let server_identity = identity("Server");
+    async fn trusted_reconnect_falls_back_without_accepting_wrong_identity() {
+        reconnect_case(false).await;
+    }
+
+    #[tokio::test]
+    async fn simultaneous_reconnect_keeps_the_same_connection_on_both_peers() {
+        reconnect_case(true).await;
+    }
+
+    async fn reconnect_case(simultaneous: bool) {
+        let server_identity = identity("Ubuntu");
+        let server_id = server_identity.device_id;
+        let mut client_identity = identity("Mac");
+        client_identity.space_id = server_identity.space_id;
+        let client_id = client_identity.device_id;
+        let trusted_server = WireDevice::from_identity(&server_identity)
+            .into_trusted_peer()
+            .unwrap();
+        let trusted_client = WireDevice::from_identity(&client_identity)
+            .into_trusted_peer()
+            .unwrap();
+        let directory = tempfile::tempdir().unwrap();
+        let (server, _events) = LanTransport::start(
+            server_identity,
+            PairingCodeManager::new(),
+            vec![trusted_client],
+            directory.path().into(),
+            0,
+        )
+        .unwrap();
+        let (wrong, _events) = LanTransport::start(
+            identity("Wrong endpoint"),
+            PairingCodeManager::new(),
+            vec![],
+            directory.path().into(),
+            0,
+        )
+        .unwrap();
+        let (client, _events) = LanTransport::start(
+            client_identity,
+            PairingCodeManager::new(),
+            vec![trusted_server],
+            directory.path().into(),
+            0,
+        )
+        .unwrap();
+        let server_task = tokio::spawn({
+            let server = server.clone();
+            async move { server.run().await }
+        });
+        let wrong_task = tokio::spawn({
+            let wrong = wrong.clone();
+            async move { wrong.run().await }
+        });
+        let addresses = [wrong.local_addr().unwrap(), server.local_addr().unwrap()]
+            .map(|a| SocketAddr::new(Ipv4Addr::LOCALHOST.into(), a.port()));
+        let client_task = tokio::spawn({
+            let client = client.clone();
+            async move { client.run().await }
+        });
+        if simultaneous {
+            let client_address = SocketAddr::new(
+                Ipv4Addr::LOCALHOST.into(),
+                client.local_addr().unwrap().port(),
+            );
+            let (outbound, inbound) = tokio::join!(
+                client.connect_trusted(server_id, addresses[1]),
+                server.connect_trusted(client_id, client_address)
+            );
+            // A losing duplicate may be closed while its handshake finishes; the winner must survive.
+            assert!(outbound.is_ok() || inbound.is_ok());
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            let client_connection = client
+                .inner
+                .connections
+                .read()
+                .get(&server_id)
+                .unwrap()
+                .clone();
+            let server_connection = server
+                .inner
+                .connections
+                .read()
+                .get(&client_id)
+                .unwrap()
+                .clone();
+            assert!(client_connection.close_reason().is_none());
+            assert!(server_connection.close_reason().is_none());
+            assert_ne!(client_connection.side(), server_connection.side());
+        } else {
+            client
+                .connect_trusted_addresses(server_id, &addresses)
+                .await
+                .unwrap();
+        }
+        assert!(client.online_peer_ids().contains(&server_id));
+        assert!(wrong.online_peer_ids().is_empty());
+        client_task.abort();
+        server_task.abort();
+        wrong_task.abort();
+    }
+
+    #[tokio::test]
+    async fn mac_joins_linux_and_delivers_signed_clipboard_and_files() {
+        pair_and_transfer(DevicePlatform::Macos, DevicePlatform::Linux).await;
+    }
+
+    #[tokio::test]
+    async fn linux_joins_mac_and_delivers_signed_clipboard_and_files() {
+        pair_and_transfer(DevicePlatform::Linux, DevicePlatform::Macos).await;
+    }
+
+    async fn pair_and_transfer(client_platform: DevicePlatform, server_platform: DevicePlatform) {
+        let mut server_identity = identity("Server");
+        server_identity.platform = server_platform;
         let server_id = server_identity.device_id;
         let server_space = server_identity.space_id;
         let server_pairing = PairingCodeManager::new();
@@ -1871,7 +2040,8 @@ mod tests {
             async move { server.run().await }
         });
 
-        let client_identity = identity("Client");
+        let mut client_identity = identity("Client");
+        client_identity.platform = client_platform;
         let client_id = client_identity.device_id;
         let client_files = tempfile::tempdir().unwrap();
         let (client, mut client_events) = LanTransport::start(
@@ -1927,7 +2097,8 @@ mod tests {
                 .unwrap()
                 .unwrap();
             match event {
-                TransportEvent::Paired { peer, .. } if peer.device_id == client_id => {
+                TransportEvent::Paired { peer, address, .. } if peer.device_id == client_id => {
+                    assert_eq!(address.port(), client.local_addr().unwrap().port());
                     saw_pair = true
                 }
                 TransportEvent::PeerOnline { device_id, .. } if device_id == client_id => {

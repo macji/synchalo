@@ -29,6 +29,7 @@ pub struct DiscoveredPeer {
     pub device_name: String,
     pub platform: DevicePlatform,
     pub address: SocketAddr,
+    pub addresses: Vec<SocketAddr>,
     pub pairing_open: bool,
     pub protocol_version: u16,
     pub fullname: String,
@@ -197,26 +198,48 @@ fn parse_peer(info: &mdns_sd::ResolvedService, local_device_id: Uuid) -> Option<
         .get_property_val_str("v")
         .and_then(|value| value.parse().ok())
         .unwrap_or_default();
+    // An old instance must never overwrite a compatible instance with the same device ID.
+    if protocol_version != PROTOCOL_VERSION {
+        return None;
+    }
     let pairing_open = info.get_property_val_str("pair") == Some("1");
-    let address = preferred_address(info.get_addresses().iter().map(|value| value.to_ip_addr()))?;
+    let addresses = discovery_addresses(
+        info.get_addresses().iter().map(|value| value.to_ip_addr()),
+        info.get_port(),
+    );
+    let address = *addresses.first()?;
     Some(DiscoveredPeer {
         device_id,
         device_name,
         platform,
-        address: SocketAddr::new(address, info.get_port()),
+        address,
+        addresses,
         pairing_open,
         protocol_version,
         fullname: info.get_fullname().to_owned(),
     })
 }
 
-fn preferred_address(addresses: impl Iterator<Item = IpAddr>) -> Option<IpAddr> {
-    let addresses: Vec<_> = addresses.filter(|address| !address.is_loopback()).collect();
-    addresses
-        .iter()
-        .copied()
-        .find(IpAddr::is_ipv4)
-        .or_else(|| addresses.first().copied())
+fn discovery_addresses(addresses: impl Iterator<Item = IpAddr>, port: u16) -> Vec<SocketAddr> {
+    // The transport currently binds IPv4. Keep all usable candidates, including routed subnets.
+    let mut result: Vec<_> = addresses
+        .filter_map(|ip| match ip {
+            IpAddr::V4(ip)
+                if !ip.is_loopback()
+                    && !ip.is_unspecified()
+                    && !ip.is_multicast()
+                    && !ip.is_broadcast()
+                    && !ip.is_link_local() =>
+            {
+                Some(SocketAddr::new(ip.into(), port))
+            }
+            _ => None,
+        })
+        .collect();
+    result.sort();
+    result.dedup();
+    result.truncate(16);
+    result
 }
 
 fn network_error(error: impl std::fmt::Display) -> AppError {
@@ -228,6 +251,62 @@ mod tests {
     use std::time::{Duration, Instant};
 
     use super::*;
+
+    #[test]
+    fn keeps_all_routable_ipv4_candidates_across_subnets() {
+        let addresses = discovery_addresses(
+            [
+                "172.17.0.1",
+                "10.253.19.25",
+                "10.253.18.25",
+                "10.253.19.25",
+                "127.0.0.1",
+                "0.0.0.0",
+                "224.0.0.251",
+                "169.254.1.1",
+                "::1",
+                "fe80::1",
+            ]
+            .into_iter()
+            .map(|ip| ip.parse().unwrap()),
+            53317,
+        );
+        assert_eq!(
+            addresses,
+            [
+                "10.253.18.25:53317",
+                "10.253.19.25:53317",
+                "172.17.0.1:53317"
+            ]
+            .map(|a| a.parse().unwrap())
+        );
+    }
+
+    #[test]
+    fn incompatible_duplicate_cannot_replace_current_protocol() {
+        let id = Uuid::new_v4();
+        for version in [2, PROTOCOL_VERSION] {
+            let props = [
+                ("id", id.to_string()),
+                ("v", version.to_string()),
+                ("platform", "linux".into()),
+            ];
+            let info = ServiceInfo::new(
+                SERVICE_TYPE,
+                "duplicate",
+                "duplicate.local.",
+                "10.253.19.25",
+                53317,
+                &props[..],
+            )
+            .unwrap()
+            .as_resolved_service();
+            assert_eq!(
+                parse_peer(&info, Uuid::nil()).is_some(),
+                version == PROTOCOL_VERSION
+            );
+        }
+    }
 
     #[test]
     fn pairing_flag_can_be_republished() {

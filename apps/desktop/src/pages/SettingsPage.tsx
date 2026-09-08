@@ -327,7 +327,7 @@ export function SettingsPage({
               </button>
               <button
                 className="button button--primary"
-                disabled={joinCode.replace(/\D/g, "").length !== 6}
+                disabled={joinCode.replace(/\D/g, "").length !== 4}
                 form="join-device-form"
                 type="submit"
               >
@@ -356,9 +356,9 @@ export function SettingsPage({
               autoComplete="one-time-code"
               id="join-code-dialog"
               inputMode="numeric"
-              maxLength={7}
+              maxLength={4}
               onChange={(event) => setJoinCode(formatPairingInput(event.target.value))}
-              placeholder="000 000"
+              placeholder="0000"
               ref={joinInputRef}
               value={joinCode}
             />
@@ -482,6 +482,5 @@ function DeviceGroup({
 }
 
 function formatPairingInput(value: string): string {
-  const digits = value.replace(/\D/g, "").slice(0, 6);
-  return digits.length > 3 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : digits;
+  return value.replace(/\D/g, "").slice(0, 4);
 }

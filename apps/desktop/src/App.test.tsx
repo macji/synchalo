@@ -78,13 +78,13 @@ describe("SyncHalo shell", () => {
     const joinDialog = screen.getByRole("dialog", { name: "加入另一台设备" });
     expect(joinDialog).toHaveClass("dialog-backdrop");
     const joinInput = screen.getByLabelText("输入一次性同步码");
-    fireEvent.change(joinInput, { target: { value: "482913" } });
-    fireEvent.change(screen.getByLabelText("设备 IP（自动发现失败时填写）"), {
+    fireEvent.change(joinInput, { target: { value: "4829" } });
+    fireEvent.change(screen.getByLabelText("设备 IP 或主机名（跨网段 / 自动发现失败时填写）"), {
       target: { value: "10.253.18.45" },
     });
     fireEvent.click(screen.getByRole("button", { name: "加入设备" }));
     await waitFor(() => expect(joinDialog).not.toBeInTheDocument());
-    expect(join).toHaveBeenCalledWith("482 913", "10.253.18.45");
+    expect(join).toHaveBeenCalledWith("4829", "10.253.18.45");
   });
 
   it("shows release notes and allows updating or ignoring when automatic updates are off", async () => {
@@ -311,7 +311,7 @@ describe("SyncHalo shell", () => {
     const syncCodeDialog = await screen.findByRole("dialog", { name: "连接另一台设备" });
     expect(syncCodeDialog).toHaveClass("dialog-backdrop--contained", "dialog-backdrop--strong");
     expect(syncCodeDialog.querySelector(".sync-code-dialog")).toHaveClass("modal-dialog");
-    expect(await screen.findByText("482 913")).toBeInTheDocument();
+    expect(await screen.findByText("4829")).toBeInTheDocument();
 
     expect(screen.getByText("全部在线设备")).toBeInTheDocument();
     expect(screen.getByText("未指定目标，将同步全部在线设备")).toBeInTheDocument();

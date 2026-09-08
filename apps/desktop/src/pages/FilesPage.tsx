@@ -508,7 +508,7 @@ export function FilesPage({
           strongBackdrop
           title={t("files.connectDevice")}
         >
-          <div className="sync-code-value">{pairingCode?.code ?? "— — —"}</div>
+          <div className="sync-code-value">{pairingCode?.code ?? "— — — —"}</div>
           <p>{t("files.syncCodeHint")}</p>
           <button
             className="button button--secondary button--small"

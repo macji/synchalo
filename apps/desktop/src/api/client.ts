@@ -193,7 +193,7 @@ export const api = {
 
   async generatePairingCode(): Promise<PairingCodeView> {
     if (isTauri) return command("generate_pairing_code");
-    const code = { code: "482 913", expiresAt: new Date(Date.now() + 60_000).toISOString() };
+    const code = { code: "4829", expiresAt: new Date(Date.now() + 60_000).toISOString() };
     mock.pairingCode = code;
     return code;
   },
@@ -211,7 +211,7 @@ export const api = {
 
   async joinWithCode(code: string, address?: string): Promise<DeviceView> {
     if (isTauri) return command("join_with_code", { code, address: address || null });
-    if (code.replace(/\D/g, "").length !== 6) throw normalizeError("请输入 6 位同步码");
+    if (code.replace(/\D/g, "").length !== 4) throw normalizeError("请输入 4 位同步码");
     return structuredClone(mock.devices[1]);
   },
 

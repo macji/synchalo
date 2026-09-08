@@ -147,7 +147,7 @@ def main() -> None:
         assert content_box is not None and dialog_box is not None
         assert abs((dialog_box["x"] + dialog_box["width"] / 2) - (content_box["x"] + content_box["width"] / 2)) < 2
         assert abs((dialog_box["y"] + dialog_box["height"] / 2) - (content_box["y"] + content_box["height"] / 2)) < 2
-        page.get_by_text("482 913").wait_for()
+        page.get_by_text("4829").wait_for()
         page.screenshot(path=ARTIFACTS / "files-sync-code.png", full_page=True)
         page.get_by_role("button", name="关闭连接另一台设备").click()
 
@@ -206,7 +206,7 @@ def main() -> None:
         assert page.get_by_role("switch", name="自动更新").is_checked()
         assert page.get_by_text(re.compile(r"每 30 分钟检查")).count() == 1
         assert page.get_by_text(f"SyncHalo {APP_VERSION}", exact=True).is_visible()
-        page.get_by_text("482 913").wait_for()
+        page.get_by_text("4829").wait_for()
         assert page.locator(".section-intro p").count() == 0
         assert page.get_by_text("传输完成与错误通知").count() == 0
         assert page.get_by_label("加入另一台设备").count() == 0
@@ -222,8 +222,8 @@ def main() -> None:
         page.get_by_role("button", name="加入", exact=True).click()
         join_dialog = page.get_by_role("dialog", name="加入另一台设备")
         join_dialog.wait_for()
-        page.get_by_label("输入一次性同步码").fill("482913")
-        manual_address = page.get_by_label("设备 IP（自动发现失败时填写）")
+        page.get_by_label("输入一次性同步码").fill("4829")
+        manual_address = page.get_by_label("设备 IP 或主机名（跨网段 / 自动发现失败时填写）")
         manual_address.fill("10.253.18.45")
         assert manual_address.input_value() == "10.253.18.45"
         page.screenshot(path=ARTIFACTS / "settings-join-dialog.png", full_page=True)
