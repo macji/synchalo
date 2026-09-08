@@ -6,6 +6,16 @@ SyncHalo is a local-first clipboard and file synchronization tool for devices on
 
 [Download the latest release](https://github.com/macji/synchalo/releases/latest) · [APT repository](https://macji.github.io/synchalo/apt) · [Security policy](SECURITY.md) · [Product specification](PRD.md)
 
+## Screenshots
+
+**Clipboard history** — Search and browse clipboard history across your trusted devices.
+
+![SyncHalo clipboard history on macOS](docs/screenshots/clipboard-history.png)
+
+**Settings and devices** — Pair devices with a four-digit code and view their connection status and IP addresses.
+
+![SyncHalo settings with a four-digit pairing code and connected devices](docs/screenshots/settings-devices.png)
+
 ## Quick Install with AI
 
 Copy the prompt below into Codex, Claude Code, or another trusted local coding agent. The agent should detect your operating system and architecture, use only official SyncHalo downloads, and verify the package before installation.

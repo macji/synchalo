@@ -6,6 +6,16 @@ SyncHalo 是一款本地优先的局域网剪贴板与文件同步工具。它�
 
 [下载最新版本](https://github.com/macji/synchalo/releases/latest) · [APT 软件源](https://macji.github.io/synchalo/apt) · [安全策略](SECURITY.md) · [产品规格](PRD.md)
 
+## 应用截图
+
+**剪贴板历史** — 搜索和浏览可信设备之间的剪贴板历史记录。
+
+![SyncHalo 在 macOS 上的剪贴板历史界面](docs/screenshots/clipboard-history.png)
+
+**设置与设备管理** — 使用四位数字码配对设备，查看设备的连接状态和 IP 地址。
+
+![SyncHalo 设置界面，展示四位配对码和已连接设备](docs/screenshots/settings-devices.png)
+
 ## 使用 AI 快速安装
 
 把下面的提示词复制到 Codex、Claude Code 或其他可信的本地编程 Agent 中。Agent 应当识别你的操作系统和处理器架构，只使用 SyncHalo 官方下载，并在安装前验证软件包。
