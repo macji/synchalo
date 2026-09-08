@@ -19,7 +19,7 @@ export const mockSnapshot: AppSnapshot = {
       platform: "macos",
       connectionState: "online",
       isCurrent: true,
-      address: null,
+      address: "192.168.1.12:53317",
       lastSeenAt: new Date(now).toISOString(),
       lastSyncAt: new Date(now - 14_000).toISOString(),
       paused: false,

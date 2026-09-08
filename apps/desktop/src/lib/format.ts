@@ -1,4 +1,4 @@
-import type { TransferState } from "../api/types";
+import type { DeviceView, TransferState } from "../api/types";
 import type { SupportedLocale, Translate } from "../i18n";
 
 export function formatBytes(bytes: number): string {
@@ -68,4 +68,13 @@ function isSameDay(a: Date, b: Date): boolean {
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate()
   );
+}
+
+export function formatDeviceSystem(device: DeviceView, unknown: string): string {
+  const platform = device.platform === "macos" ? "macOS" : device.platform === "linux" ? "Ubuntu / Linux" : unknown;
+  const address = device.address;
+  const ip = address?.startsWith("[")
+    ? address.slice(1, address.indexOf("]"))
+    : address?.split(":").length === 2 ? address.split(":")[0] : address;
+  return ip ? `${platform} · ${ip}` : platform;
 }

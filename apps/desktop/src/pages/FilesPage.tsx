@@ -35,7 +35,7 @@ import { ModalDialog } from "../components/ModalDialog";
 import { PageHeader } from "../components/PageHeader";
 import { localizeTransferError, useI18n } from "../i18n";
 import type { Translate } from "../i18n";
-import { formatBytes, formatTime, historyGroup, transferLabel } from "../lib/format";
+import { formatDeviceSystem, formatBytes, formatTime, historyGroup, transferLabel } from "../lib/format";
 
 interface FilesPageProps {
   transfers: TransferView[];
@@ -254,7 +254,7 @@ export function FilesPage({
                   <span className="device-icon"><Laptop aria-hidden="true" size={16} /></span>
                   <span className="sync-device-copy">
                     <strong>{currentDevice.name}</strong>
-                    <small>{t("common.localDevice")}</small>
+                    <small>{t("common.localDevice")} · {formatDeviceSystem(currentDevice, t("common.unknownPlatform"))}</small>
                   </span>
                   <button
                     className="sync-code-trigger"

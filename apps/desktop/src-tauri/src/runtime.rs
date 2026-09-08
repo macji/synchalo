@@ -280,7 +280,8 @@ impl AppRuntime {
             platform: synchalo_core::DevicePlatform::current(),
             connection_state: DeviceConnectionState::Online,
             is_current: true,
-            address: None,
+            address: synchalo_network::local_address(self.transport_port)
+                .map(|address| address.to_string()),
             last_seen_at: Some(now),
             last_sync_at: None,
             paused: false,

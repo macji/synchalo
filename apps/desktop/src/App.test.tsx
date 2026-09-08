@@ -40,6 +40,7 @@ describe("SyncHalo shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /设置/ }));
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
     expect(screen.getByText("我的设备")).toBeInTheDocument();
+    expect(document.querySelector(".device-row")).toHaveTextContent("macOS · 192.168.1.12");
     expect(screen.getByText("同步与历史")).toBeInTheDocument();
     expect(screen.queryByText("粘贴板与历史")).not.toBeInTheDocument();
     expect(screen.queryByText("自动同步粘贴板")).not.toBeInTheDocument();
@@ -305,7 +306,7 @@ describe("SyncHalo shell", () => {
 
     const deviceRows = document.querySelectorAll(".sync-device-row");
     expect(deviceRows[0]).toHaveTextContent("Jason 的 MacBook Air");
-    expect(deviceRows[0]).toHaveTextContent("本机");
+    expect(deviceRows[0]).toHaveTextContent("本机 · macOS · 192.168.1.12");
     fireEvent.click(screen.getByRole("button", { name: "显示同步码" }));
     const syncCodeDialog = await screen.findByRole("dialog", { name: "连接另一台设备" });
     expect(syncCodeDialog).toHaveClass("dialog-backdrop--contained", "dialog-backdrop--strong");

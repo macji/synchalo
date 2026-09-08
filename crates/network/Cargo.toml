@@ -12,6 +12,7 @@ chrono.workspace = true
 ed25519-dalek = "3.0"
 getrandom.workspace = true
 hmac = "0.12"
+if-addrs = "0.15"
 mdns-sd = "0.21"
 parking_lot.workspace = true
 quinn = "0.11.11"

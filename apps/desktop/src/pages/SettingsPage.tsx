@@ -16,7 +16,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
-  DevicePlatform,
   DeviceView,
   HistoryRetention,
   LanguagePreference,
@@ -31,7 +30,7 @@ import { PageHeader } from "../components/PageHeader";
 import { Switch } from "../components/Switch";
 import { useI18n } from "../i18n";
 import type { MessageKey } from "../i18n/messages";
-import { formatRelative } from "../lib/format";
+import { formatDeviceSystem, formatRelative } from "../lib/format";
 
 interface SettingsPageProps {
   appVersion: string | null;
@@ -442,8 +441,7 @@ function DeviceGroup({
           <div className="device-copy">
             <strong>{device.name}</strong>
             <span>
-              {platformLabel(device.platform, t("common.unknownPlatform"))}
-              {device.address ? ` · ${device.address.split(":")[0]}` : ""}
+              {formatDeviceSystem(device, t("common.unknownPlatform"))}
               {device.paused ? ` · ${t("common.paused")}` : ""}
               {!device.isCurrent && device.connectionState === "offline"
                 ? ` · ${t("settings.lastOnline", { time: formatRelative(device.lastSeenAt, t) })}`
@@ -486,8 +484,4 @@ function DeviceGroup({
 function formatPairingInput(value: string): string {
   const digits = value.replace(/\D/g, "").slice(0, 6);
   return digits.length > 3 ? `${digits.slice(0, 3)} ${digits.slice(3)}` : digits;
-}
-
-function platformLabel(platform: DevicePlatform, unknown: string): string {
-  return platform === "macos" ? "macOS" : platform === "linux" ? "Ubuntu / Linux" : unknown;
 }

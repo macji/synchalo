@@ -866,6 +866,11 @@ button.sync-device-row.is-selected {
   white-space: nowrap;
 }
 
+.sync-device-row.is-current .sync-device-copy small {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
 .sync-code-trigger {
   min-height: 27px;
   padding: 0 8px;
